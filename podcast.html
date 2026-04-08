@@ -117,6 +117,65 @@ footer{background:#080808;border-top:1px solid rgba(245,196,0,.08);padding:64px 
   #player{padding:14px 20px;}
   footer{padding:48px 24px 32px;}.fg{grid-template-columns:1fr 1fr;}
 }
+
+/* Card share button */
+.share-btn {
+  background: none;
+  border: 1px solid rgba(245,196,0,.2);
+  border-radius: 100px;
+  padding: 2px 10px;
+  color: #F5C400;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all .2s;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.share-btn:hover {
+  background: rgba(245,196,0,.1);
+  border-color: #F5C400;
+}
+/* Card share dropdown */
+.card-share-menu {
+  display: none;
+  position: absolute;
+  bottom: 32px;
+  left: 0;
+  background: #1a1a1a;
+  border: 1px solid rgba(245,196,0,.2);
+  border-radius: 6px;
+  padding: 8px;
+  gap: 6px;
+  flex-direction: column;
+  z-index: 100;
+  min-width: 160px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.6);
+}
+.card-share-menu.open { display: flex; }
+.card-share-menu button {
+  background: none;
+  border: none;
+  color: #ccc;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+  padding: 6px 10px;
+  border-radius: 4px;
+  transition: background .15s;
+  white-space: nowrap;
+}
+.card-share-menu button:hover { background: rgba(245,196,0,.1); color: #F5C400; }
+.share-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
 </style>
 </head>
 <body>
@@ -499,6 +558,49 @@ window.addEventListener('scroll', function() {
 });
 
 loadEps();
+
+// Card-level share functions
+function toggleCardShare(btn) {
+  // Close any other open menus first
+  document.querySelectorAll('.card-share-menu.open').forEach(m => {
+    if (m !== btn.nextElementSibling) m.classList.remove('open');
+  });
+  btn.nextElementSibling.classList.toggle('open');
+}
+
+// Close card menus when clicking elsewhere
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('.share-wrap')) {
+    document.querySelectorAll('.card-share-menu.open').forEach(m => m.classList.remove('open'));
+  }
+});
+
+function cardCopyLink(link, btn) {
+  const url = link || window.location.href;
+  navigator.clipboard.writeText(url).then(() => {
+    const orig = btn.textContent;
+    btn.textContent = '✓ Copied!';
+    btn.style.color = '#F5C400';
+    setTimeout(() => { btn.textContent = orig; btn.style.color = ''; }, 2000);
+  }).catch(() => {
+    const ta = document.createElement('textarea');
+    ta.value = url; document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); document.body.removeChild(ta);
+  });
+}
+
+function cardTwitter(title, link) {
+  const text = encodeURIComponent('"' + title + '" — @MisfitEnt podcast. Listen: ' + link);
+  window.open('https://twitter.com/intent/tweet?text=' + text, '_blank');
+}
+
+function cardLinkedIn(link) {
+  window.open('https://www.linkedin.com/sharing/share-offsite/?url=' + encodeURIComponent(link), '_blank');
+}
+
+function cardFacebook(link) {
+  window.open('https://www.facebook.com/sharer/sharer.php?u=' + encodeURIComponent(link), '_blank');
+}
 </script><script>
 // Calls our Netlify serverless proxy — no CORS issues
 const PROXY = '/.netlify/functions/rss-proxy';
