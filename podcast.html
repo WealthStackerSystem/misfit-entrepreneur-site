@@ -192,6 +192,15 @@ footer{background:#080808;border-top:1px solid rgba(245,196,0,.08);padding:64px 
   </div>
 </div>
 
+<!-- SHARE PANEL — slides up above player -->
+<div id="share-panel" style="display:none;position:fixed;bottom:74px;left:0;right:0;background:#161616;border-top:1px solid rgba(245,196,0,.15);padding:12px 48px;gap:12px;align-items:center;flex-wrap:wrap;z-index:799;">
+  <span style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#555;">Share This Episode</span>
+  <button id="copy-btn" onclick="copyLink()" style="background:#1e1e1e;border:1px solid rgba(255,255,255,.1);border-radius:100px;padding:7px 16px;color:#ccc;font-family:'Montserrat',sans-serif;font-size:11px;font-weight:700;cursor:pointer;transition:all .2s;">🔗 Copy Link</button>
+  <button onclick="shareToTwitter()" style="background:#1e1e1e;border:1px solid rgba(255,255,255,.1);border-radius:100px;padding:7px 16px;color:#ccc;font-family:'Montserrat',sans-serif;font-size:11px;font-weight:700;cursor:pointer;transition:all .2s;">𝕏 Twitter</button>
+  <button onclick="shareToLinkedIn()" style="background:#1e1e1e;border:1px solid rgba(255,255,255,.1);border-radius:100px;padding:7px 16px;color:#ccc;font-family:'Montserrat',sans-serif;font-size:11px;font-weight:700;cursor:pointer;transition:all .2s;">in LinkedIn</button>
+  <button onclick="shareToFacebook()" style="background:#1e1e1e;border:1px solid rgba(255,255,255,.1);border-radius:100px;padding:7px 16px;color:#ccc;font-family:'Montserrat',sans-serif;font-size:11px;font-weight:700;cursor:pointer;transition:all .2s;">f Facebook</button>
+</div>
+
 <div id="player">
   <img id="player-art" src="" alt="" style="display:none;">
   <div class="pinfo">
@@ -199,6 +208,7 @@ footer{background:#080808;border-top:1px solid rgba(245,196,0,.08);padding:64px 
     <div class="pdate" id="player-date"></div>
   </div>
   <audio id="audio-el" controls preload="none"></audio>
+  <button onclick="toggleShare()" style="background:none;border:1px solid rgba(245,196,0,.3);border-radius:100px;padding:6px 14px;color:#F5C400;font-family:'Montserrat',sans-serif;font-size:10px;font-weight:700;cursor:pointer;letter-spacing:1px;flex-shrink:0;transition:all .2s;" title="Share this episode">↑ Share</button>
   <button class="pclose" onclick="closePlayer()">✕</button>
 </div>
 
@@ -226,7 +236,7 @@ footer{background:#080808;border-top:1px solid rgba(245,196,0,.08);padding:64px 
   <div class="fc"><h4>Resources</h4><ul>
     <li><a href="/truths/">Free Misfit Code</a></li>
     <li><a href="/playbook/">Execution Playbook — $29</a></li>
-    <li><a href="mailto:support@misfitentrepreneur.com">Email Us</a></li>
+    <li><a href="/cdn-cgi/l/email-protection#c5b6b0b5b5aab7b185a8acb6a3acb1a0abb1b7a0b5b7a0aba0b0b7eba6aaa8">Email Us</a></li>
   </ul></div>
 </div>
 <div class="fb2">
@@ -234,7 +244,262 @@ footer{background:#080808;border-top:1px solid rgba(245,196,0,.08);padding:64px 
   <div style="display:flex;gap:20px;"><a href="/privacy-policy/">Privacy</a><a href="/terms/">Terms</a></div>
 </div></footer>
 
-<script>
+<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
+const PROXY = '/.netlify/functions/rss-proxy';
+const PER_PAGE = 20;
+let allEps = [], filtered = [], page = 1;
+
+// Parse episode number from title e.g. "467: The Hustle Blueprint..."
+function parseEpNum(title) {
+  const m = title.match(/^(\d+)[:\-\.\s]/);
+  return m ? parseInt(m[1]) : null;
+}
+
+async function loadEps() {
+  try {
+    const res = await fetch(PROXY);
+    if (!res.ok) throw new Error('Proxy returned ' + res.status);
+    const xml = await res.text();
+    if (!xml || xml.trim()[0] !== '<') throw new Error('Invalid XML');
+
+    const doc   = new DOMParser().parseFromString(xml, 'text/xml');
+    const items = Array.from(doc.querySelectorAll('item'));
+    if (!items.length) throw new Error('No episodes in feed');
+
+    const feedImg = getT(doc, 'channel > image > url') || '';
+    const total   = items.length;
+
+    allEps = items.map((item, i) => {
+      const enc   = item.querySelector('enclosure');
+      const itI   = item.getElementsByTagNameNS('*','image')[0];
+      const img   = (itI ? itI.getAttribute('href') : '') || feedImg;
+      const title = getT(item,'title') || ('Episode ' + (total - i));
+      const link  = getT(item,'link') || '';
+      // Use number from title if available, otherwise count from feed
+      const num   = parseEpNum(title) || (total - i);
+      return {
+        num, title, link,
+        desc : strip(getT(item,'description') || getNS(item,'summary') || ''),
+        date : getT(item,'pubDate') || '',
+        audio: enc ? (enc.getAttribute('url') || '') : '',
+        img,
+        dur  : getNS(item,'duration') || ''
+      };
+    });
+
+    filtered = allEps.slice();
+    document.getElementById('ep-count').textContent = total + ' episodes loaded';
+    renderFeatured();
+    renderList();
+
+  } catch(e) {
+    console.error('RSS failed:', e);
+    document.getElementById('featured-grid').innerHTML = fallback();
+    document.getElementById('loading-list').style.display = 'none';
+    document.getElementById('ep-count').textContent = '';
+  }
+}
+
+function getT(el, sel) {
+  const n = el.querySelector(sel); return n ? n.textContent.trim() : '';
+}
+function getNS(el, name) {
+  const n = el.getElementsByTagNameNS('*', name)[0]; return n ? n.textContent.trim() : '';
+}
+function strip(h) {
+  return h.replace(/<[^>]*>/g,'')
+    .replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>')
+    .replace(/&nbsp;/g,' ').replace(/&#\d+;/g,'').replace(/\s+/g,' ').trim();
+}
+function sa(s) {
+  return (s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;').replace(/\n/g,' ');
+}
+function fmtDate(d) {
+  if (!d) return '';
+  try { return new Date(d).toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'}); }
+  catch(e) { return d; }
+}
+function fmtDur(d) {
+  if (!d) return '';
+  if (d.includes(':')) return d;
+  const s=parseInt(d)||0, h=Math.floor(s/3600), m=Math.floor((s%3600)/60);
+  return h>0 ? h+'h '+m+'m' : m+'m';
+}
+
+function renderFeatured() {
+  const latest = filtered.slice(0,3);
+  const grid   = document.getElementById('featured-grid');
+  if (!latest.length) { document.getElementById('featured-section').style.display='none'; return; }
+  document.getElementById('featured-section').style.display = 'block';
+  grid.innerHTML = latest.map(ep => `
+    <div class="fcard" onclick="playEp('${sa(ep.audio)}','${sa(ep.title)}','${sa(ep.date)}','${sa(ep.img)}','${sa(ep.link)}')">
+      ${ep.img ? `<img class="fthumb" src="${ep.img}" alt="" loading="lazy" onerror="this.style.display='none';this.nextSibling.style.display='flex'">` : ''}
+      <div class="fthumb-ph"${ep.img?' style="display:none"':''}>🎙️</div>
+      <div class="fbody">
+        <div class="fnum">Episode ${ep.num}</div>
+        <div class="ftitle">${ep.title}</div>
+        <div class="fdate">${fmtDate(ep.date)}</div>
+        <div class="fplay">▶ Play Episode</div>
+      </div>
+    </div>`).join('');
+}
+
+function renderList() {
+  const src   = filtered.length < allEps.length ? filtered : filtered.slice(3);
+  const total = src.length;
+  const pages = Math.ceil(total / PER_PAGE);
+  const slice = src.slice((page-1)*PER_PAGE, page*PER_PAGE);
+  const list  = document.getElementById('ep-list');
+  const ll    = document.getElementById('loading-list');
+  if (ll) ll.style.display = 'none';
+
+  document.getElementById('arch-count').textContent = total + ' episodes';
+
+  if (!slice.length) {
+    list.innerHTML = '<div style="padding:40px 0;text-align:center;color:#555;font-size:13px;">No episodes match your search.</div>';
+    document.getElementById('pager').style.display = 'none';
+    return;
+  }
+
+  list.innerHTML = slice.map(ep => `
+    <div class="eprow" onclick="playEp('${sa(ep.audio)}','${sa(ep.title)}','${sa(ep.date)}','${sa(ep.img)}','${sa(ep.link)}')">
+      <div class="epnum">${ep.num}</div>
+      ${ep.img
+        ? `<img class="eart" src="${ep.img}" alt="" loading="lazy" onerror="this.outerHTML='<div class=\\'eph\\'>🎙️</div>'">`
+        : '<div class="eph">🎙️</div>'}
+      <div class="einfo">
+        <div class="etitle">${ep.title}</div>
+        <div class="edesc">${ep.desc}</div>
+        <div class="emeta">
+          <span class="edate">${fmtDate(ep.date)}</span>
+          ${ep.dur ? '<span class="edur">⏱ '+fmtDur(ep.dur)+'</span>' : ''}
+          <span class="etag">Misfit 3™</span>
+        </div>
+      </div>
+      <button class="eplay" aria-label="Play">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="#0e0e0e"><path d="M8 5v14l11-7z"/></svg>
+      </button>
+    </div>`).join('');
+
+  const pager = document.getElementById('pager');
+  if (pages > 1) {
+    pager.style.display = 'flex';
+    document.getElementById('pg-info').textContent = 'Page '+page+' of '+pages;
+    document.getElementById('pg-prev').disabled = page===1;
+    document.getElementById('pg-next').disabled = page===pages;
+  } else {
+    pager.style.display = 'none';
+  }
+}
+
+document.getElementById('search').addEventListener('input', function() {
+  const q = this.value.toLowerCase().trim();
+  page = 1;
+  filtered = q
+    ? allEps.filter(ep => ep.title.toLowerCase().includes(q) || ep.desc.toLowerCase().includes(q))
+    : allEps.slice();
+  document.getElementById('featured-section').style.display = q ? 'none' : 'block';
+  document.getElementById('ep-count').textContent = filtered.length + ' episodes';
+  renderFeatured();
+  renderList();
+});
+
+function changePage(d) {
+  page += d;
+  renderList();
+  document.getElementById('arch-section').scrollIntoView({behavior:'smooth', block:'start'});
+}
+
+// Current episode link for sharing
+let currentEpLink = '';
+
+function playEp(audio, title, date, img, link) {
+  if (!audio) return;
+  currentEpLink = link || window.location.href;
+  document.getElementById('player-title').textContent = title;
+  document.getElementById('player-date').textContent  = fmtDate(date);
+  const art = document.getElementById('player-art');
+  if (img) { art.src=img; art.style.display='block'; } else { art.style.display='none'; }
+  const aud = document.getElementById('audio-el');
+  aud.src = audio;
+  document.getElementById('player').style.transform = 'translateY(0)';
+  // Hide share panel if open
+  document.getElementById('share-panel').style.display = 'none';
+  aud.play().catch(()=>{});
+}
+
+function closePlayer() {
+  const a = document.getElementById('audio-el');
+  a.pause(); a.src='';
+  document.getElementById('player').style.transform = 'translateY(100%)';
+  document.getElementById('share-panel').style.display = 'none';
+}
+
+function toggleShare() {
+  const panel = document.getElementById('share-panel');
+  panel.style.display = panel.style.display === 'flex' ? 'none' : 'flex';
+}
+
+function copyLink() {
+  const link = currentEpLink;
+  navigator.clipboard.writeText(link).then(() => {
+    const btn = document.getElementById('copy-btn');
+    btn.textContent = '✓ Copied!';
+    btn.style.color = '#F5C400';
+    setTimeout(() => { btn.textContent = '🔗 Copy Link'; btn.style.color = ''; }, 2000);
+  }).catch(() => {
+    // Fallback for older browsers
+    const ta = document.createElement('textarea');
+    ta.value = link; document.body.appendChild(ta);
+    ta.select(); document.execCommand('copy');
+    document.body.removeChild(ta);
+  });
+}
+
+function shareToTwitter() {
+  const title = document.getElementById('player-title').textContent;
+  const text  = encodeURIComponent('"' + title + '" — @MisfitEnt podcast. Listen: ' + currentEpLink);
+  window.open('https://twitter.com/intent/tweet?text=' + text, '_blank');
+}
+
+function shareToLinkedIn() {
+  const url = encodeURIComponent(currentEpLink);
+  window.open('https://www.linkedin.com/sharing/share-offsite/?url=' + url, '_blank');
+}
+
+function shareToFacebook() {
+  const url = encodeURIComponent(currentEpLink);
+  window.open('https://www.facebook.com/sharer/sharer.php?u=' + url, '_blank');
+}
+
+function nativeShare() {
+  if (navigator.share) {
+    navigator.share({
+      title: document.getElementById('player-title').textContent,
+      text: 'Check out this episode of the Misfit Entrepreneur podcast',
+      url: currentEpLink
+    }).catch(()=>{});
+  }
+}
+
+function fallback() {
+  return `<div style="grid-column:span 3;text-align:center;padding:60px 20px;">
+    <p style="font-family:'Bebas Neue',sans-serif;font-size:32px;color:#fff;margin-bottom:8px;">460+ Episodes Available</p>
+    <p style="font-size:13px;color:#666;margin-bottom:24px;">Listen free on your favorite platform.</p>
+    <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
+      <a href="https://podcasts.apple.com/us/podcast/dave-lukas-the-misfit-entrepreneur-breakthrough/id1145889006" style="display:inline-flex;align-items:center;background:#F5C400;color:#0e0e0e;text-decoration:none;font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;padding:14px 24px;border-radius:3px;" target="_blank">Apple Podcasts</a>
+      <a href="https://www.youtube.com/@misfitentrepreneur" style="display:inline-flex;align-items:center;color:#aaa;text-decoration:none;font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;padding:14px 24px;border:1px solid rgba(245,196,0,.3);border-radius:3px;" target="_blank">YouTube</a>
+    </div>
+  </div>`;
+}
+
+window.addEventListener('scroll', function() {
+  var h=document.getElementById('hdr');
+  if(h) h.style.background=window.scrollY>60?'rgba(8,8,8,.99)':'rgba(10,10,10,.96)';
+});
+
+loadEps();
+</script><script>
 // Calls our Netlify serverless proxy — no CORS issues
 const PROXY = '/.netlify/functions/rss-proxy';
 const PER_PAGE = 20;
@@ -425,10 +690,4 @@ function fallback() {
 }
 
 window.addEventListener('scroll', function() {
-  var h=document.getElementById('hdr');
-  if(h) h.style.background=window.scrollY>60?'rgba(8,8,8,.99)':'rgba(10,10,10,.96)';
-});
-
-loadEps();
-</script>
-</body></html>
+  va
