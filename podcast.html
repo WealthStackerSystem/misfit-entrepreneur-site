@@ -433,6 +433,15 @@ function renderList() {
           <span class="edate">${fmtDate(ep.date)}</span>
           ${ep.dur ? '<span class="edur">⏱ '+fmtDur(ep.dur)+'</span>' : ''}
           <span class="etag">Misfit 3™</span>
+          <span class="share-wrap" onclick="event.stopPropagation()">
+            <button class="share-btn" onclick="toggleCardShare(this)">↑ Share</button>
+            <div class="card-share-menu">
+              <button onclick="cardCopyLink('${sa(ep.link)}', this)">🔗 Copy Link</button>
+              <button onclick="cardTwitter('${sa(ep.title)}','${sa(ep.link)}')">𝕏 Twitter</button>
+              <button onclick="cardLinkedIn('${sa(ep.link)}')">in LinkedIn</button>
+              <button onclick="cardFacebook('${sa(ep.link)}')">f Facebook</button>
+            </div>
+          </span>
         </div>
       </div>
       <button class="eplay" aria-label="Play">
@@ -726,6 +735,15 @@ function renderList() {
           <span class="edate">${fmtDate(ep.date)}</span>
           ${ep.dur ? '<span class="edur">⏱ '+fmtDur(ep.dur)+'</span>' : ''}
           <span class="etag">Misfit 3™</span>
+          <span class="share-wrap" onclick="event.stopPropagation()">
+            <button class="share-btn" onclick="toggleCardShare(this)">↑ Share</button>
+            <div class="card-share-menu">
+              <button onclick="cardCopyLink('${sa(ep.link)}', this)">🔗 Copy Link</button>
+              <button onclick="cardTwitter('${sa(ep.title)}','${sa(ep.link)}')">𝕏 Twitter</button>
+              <button onclick="cardLinkedIn('${sa(ep.link)}')">in LinkedIn</button>
+              <button onclick="cardFacebook('${sa(ep.link)}')">f Facebook</button>
+            </div>
+          </span>
         </div>
       </div>
       <button class="eplay" aria-label="Play">
