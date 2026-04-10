@@ -7,17 +7,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 2   # need history to revert
-
-      - name: Revert last bad commit (restores header logos)
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git revert HEAD --no-edit
-          git push
-
-      - uses: actions/checkout@v4   # re-checkout after revert
 
       - name: Fix Spotify links and ep-artwork images
         run: python3 fix_episodes.py
