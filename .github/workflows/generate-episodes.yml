@@ -1,0 +1,32 @@
+name: Generate Episode Pages
+
+on:
+  workflow_dispatch:  # Manual trigger — click Run in GitHub Actions tab
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests beautifulsoup4 lxml
+
+      - name: Run episode generator
+        run: python generate_episodes.py
+
+      - name: Commit generated episode pages
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add episodes/
+          git add episode_index.json || true
+          git diff --staged --quiet || git commit -m "Auto: Generate all historical episode pages"
+          git push
