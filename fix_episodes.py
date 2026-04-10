@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """
-MISFIT ENTREPRENEUR — Full Site Quick Fix v2
-=============================================
+MISFIT ENTREPRENEUR — Full Site Fix v3
+=======================================
 Fixes across ALL HTML files:
   1. Spotify link -> correct show URL (root pages + episodes)
-  2. Cleans up broken SVG from previous run
-  3. Replaces ebook cover with podcast logo image (episode pages)
+  2. ep-artwork image -> podcast logo (episode pages)
+     Uses string-based approach — works even on multi-line img tags.
+
+REQUIREMENT: Upload podcast-cover.jpg to /images/ folder in repo first.
 """
 
 import os, re, glob
@@ -13,12 +15,10 @@ import os, re, glob
 EPISODES_DIR    = "episodes"
 CORRECT_SPOTIFY = "https://open.spotify.com/show/2DAf0Yt9HedZSqoIBCliik"
 LOGO_PATH       = "/images/podcast-cover.jpg"
-
-# Clean replacement img tag
-LOGO_IMG = f'<img src="{LOGO_PATH}" alt="Misfit Entrepreneur Podcast" class="ep-artwork" style="width:100%;border-radius:8px;display:block;">'
+LOGO_IMG        = f'<img src="{LOGO_PATH}" alt="Misfit Entrepreneur Podcast" class="ep-artwork" style="width:100%;border-radius:8px;display:block;">'
 
 print("=" * 55)
-print(" Misfit Entrepreneur — Full Site Fix v2")
+print(" Misfit Entrepreneur — Full Site Fix v3")
 print("=" * 55)
 
 root_files    = glob.glob("*.html")
@@ -52,44 +52,41 @@ for filepath in all_files:
             spotify_fixed += 1
             changed = True
 
-        # ── Fix 2: Episode pages — clean image area ──────────
-        if is_episode:
+        # ── Fix 2: Episode pages — replace ep-artwork img ────
+        # Uses string operations to handle multi-line base64 img tags
+        if is_episode and 'class="ep-artwork"' in content:
+            idx = content.find('class="ep-artwork"')
+            if idx != -1:
+                # Walk backward to find <img
+                start = content.rfind('<img', 0, idx)
+                if start != -1:
+                    # Walk forward to find closing >
+                    end = content.find('>', idx)
+                    if end != -1:
+                        end += 1  # include the >
+                        old_tag = content[start:end]
+                        # Only replace if it's a data URI or broken SVG div
+                        if 'data:image' in old_tag or old_tag.startswith('<div'):
+                            content = content[:start] + LOGO_IMG + content[end:]
+                            image_fixed += 1
+                            changed = True
+                            print(f"  ✓ Image fixed: {filepath}")
 
-            # Case A: Previous broken run left a <div class="ep-artwork"...>
-            # with SVG inside (the "> and FIT text visible on screen)
-            # Match the div and everything inside up to its closing </div>
-            broken_div, n1 = re.subn(
-                r'<div class="ep-artwork"[^>]*>.*?</div>',
-                LOGO_IMG,
-                content,
-                count=1,
-                flags=re.DOTALL
-            )
-            if n1:
-                content = broken_div
-                image_fixed += 1
-                changed = True
-
-            # Case B: Still has the original <img class="ep-artwork" src="data:...">
-            # Match even if src is a massive base64 blob (use DOTALL to be safe)
-            elif 'class="ep-artwork"' in content:
-                # Match img tag with ep-artwork class regardless of attribute order
-                img_tag, n2 = re.subn(
-                    r'<img(?=[^>]*class="ep-artwork")[^>]*>',
-                    LOGO_IMG,
-                    content,
-                    count=1,
-                    flags=re.DOTALL
-                )
-                if n2:
-                    content = img_tag
-                    image_fixed += 1
-                    changed = True
+                # Also clean up any broken <div class="ep-artwork"...> from previous runs
+                elif content.find('<div class="ep-artwork"') != -1:
+                    div_start = content.find('<div class="ep-artwork"')
+                    # Find the matching </div>
+                    div_end = content.find('</div>', div_start)
+                    if div_end != -1:
+                        div_end += 6  # len('</div>')
+                        content = content[:div_start] + LOGO_IMG + content[div_end:]
+                        image_fixed += 1
+                        changed = True
+                        print(f"  ✓ Div cleaned: {filepath}")
 
         if changed:
             with open(filepath, 'w', encoding='utf-8') as f:
                 f.write(content)
-            print(f"  ✓ {filepath}")
 
     except Exception as e:
         print(f"  ❌ {filepath}: {e}")
@@ -101,4 +98,4 @@ print(f"   Spotify fixed : {spotify_fixed} files")
 print(f"   Images fixed  : {image_fixed} episode files")
 print(f"   Errors        : {errors}")
 print(f"{'='*55}")
-print(f"\nNOTE: Make sure /images/podcast-cover.jpg is in your repo root.")
+print(f"\nNOTE: Make sure /images/podcast-cover.jpg is in the repo.")
