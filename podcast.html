@@ -307,6 +307,7 @@ footer{background:#080808;border-top:1px solid rgba(245,196,0,.08);padding:64px 
 const PROXY = '/.netlify/functions/rss-proxy';
 const PER_PAGE = 20;
 let allEps = [], filtered = [], page = 1;
+let slugMap = {};  // ep num -> slug from episode_index.json
 
 // Parse episode number from title e.g. "467: The Hustle Blueprint..."
 function parseEpNum(title) {
@@ -316,7 +317,19 @@ function parseEpNum(title) {
 
 async function loadEps() {
   try {
-    const res = await fetch(PROXY);
+    // Fetch RSS + episode index in parallel
+    const [rssRes, idxRes] = await Promise.all([
+      fetch(PROXY),
+      fetch('/episode_index.json').catch(() => null)
+    ]);
+    if (idxRes && idxRes.ok) {
+      try {
+        const idx = await idxRes.json();
+        idx.forEach(ep => { slugMap[String(ep.num)] = ep.slug; });
+        console.log('Index: ' + idx.length + ' slugs loaded');
+      } catch(e) { console.warn('index parse error', e); }
+    }
+    const res = rssRes;
     if (!res.ok) throw new Error('Proxy returned ' + res.status);
     const xml = await res.text();
     if (!xml || xml.trim()[0] !== '<') throw new Error('Invalid XML');
@@ -384,6 +397,10 @@ function fmtDur(d) {
   const s=parseInt(d)||0, h=Math.floor(s/3600), m=Math.floor((s%3600)/60);
   return h>0 ? h+'h '+m+'m' : m+'m';
 }
+function getShowNotesUrl(ep) {
+  const slug = slugMap[String(ep.num)];
+  return slug ? '/episodes/' + slug + '.html' : null;
+}
 
 function renderFeatured() {
   const latest = filtered.slice(0,3);
@@ -399,6 +416,7 @@ function renderFeatured() {
         <div class="ftitle">${ep.title}</div>
         <div class="fdate">${fmtDate(ep.date)}</div>
         <div class="fplay">▶ Play Episode</div>
+        ${getShowNotesUrl(ep) ? `<a href="${getShowNotesUrl(ep)}" onclick="event.stopPropagation()" style="display:block;margin-top:8px;font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#555;text-decoration:none;transition:color .2s;" onmouseover="this.style.color='#F5C400'" onmouseout="this.style.color='#555'">Show Notes →</a>` : ''}
       </div>
     </div>`).join('');
 }
@@ -433,6 +451,7 @@ function renderList() {
           <span class="edate">${fmtDate(ep.date)}</span>
           ${ep.dur ? '<span class="edur">⏱ '+fmtDur(ep.dur)+'</span>' : ''}
           <span class="etag">Misfit 3™</span>
+          ${(() => { const sn = getShowNotesUrl(ep); return sn ? `<a class="share-btn" href="${sn}" onclick="event.stopPropagation()" style="text-decoration:none;">📄 Show Notes</a>` : ''; })()}
           <span class="share-wrap" onclick="event.stopPropagation()">
             <button class="share-btn" onclick="toggleCardShare(this)">↑ Share</button>
             <div class="card-share-menu">
