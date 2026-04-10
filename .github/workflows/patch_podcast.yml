@@ -1,0 +1,18 @@
+name: Patch Podcast Page
+on:
+  workflow_dispatch:
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run patch script
+        run: python3 patch_podcast.py
+      - name: Commit patched podcast.html
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add podcast.html
+          git diff --staged --quiet || git commit -m "Auto: Add show notes links to podcast.html"
+          git push
