@@ -9,7 +9,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install dependencies
-        run: pip install requests --break-system-packages -q
+        run: pip install requests beautifulsoup4 lxml --break-system-packages -q
 
       - name: Generate episode pages from RSS
         run: python3 generate_episodes.py
