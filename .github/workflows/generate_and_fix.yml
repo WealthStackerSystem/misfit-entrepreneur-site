@@ -1,0 +1,26 @@
+name: Generate All Episode Pages
+on:
+  workflow_dispatch:
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: pip install requests --break-system-packages -q
+
+      - name: Generate episode pages from RSS
+        run: python3 generate_episodes.py
+
+      - name: Fix logos and images on all episode pages
+        run: python3 fix_episodes.py
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --staged --quiet || git commit -m "Auto: Generate all episode pages + fix logos"
+          git push
