@@ -1,58 +1,81 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Blog | Misfit Entrepreneur — Dave Lukas</title>
-<meta name="description" content="10+ years of entrepreneurship insights from Dave Lukas and world-class guests on the Misfit Entrepreneur podcast.">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<meta name="description" content="10+ years of entrepreneurship insights, mindset, and business strategy from Dave Lukas and the Misfit Entrepreneur podcast.">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Montserrat:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
-body{background:#0F0F0F;color:#d8d8d8;font-family:'Montserrat',sans-serif;}
-header{position:fixed;top:0;left:0;right:0;z-index:900;height:70px;padding:0 40px;display:flex;align-items:center;justify-content:space-between;background:rgba(10,10,10,0.96);border-bottom:1px solid rgba(240,180,41,0.1);}
-.logo a{text-decoration:none;font-family:'Bebas Neue',sans-serif;font-size:22px;color:#F0B429;letter-spacing:2px;}
-nav a{color:#aaa;text-decoration:none;font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-left:28px;}
-nav a:hover{color:#fff;}
-.hero{padding:110px 40px 60px;text-align:center;max-width:800px;margin:0 auto;}
-.eyebrow{font-size:10px;font-weight:700;letter-spacing:4px;text-transform:uppercase;color:#F0B429;margin-bottom:16px;display:flex;align-items:center;justify-content:center;gap:10px;}
-.eyebrow::before,.eyebrow::after{content:'';width:26px;height:2px;background:#F0B429;display:block;}
-.hero h1{font-family:'Bebas Neue',sans-serif;font-size:clamp(48px,6vw,80px);color:#fff;letter-spacing:1px;margin-bottom:16px;}
-.hero p{color:#666;font-size:14px;line-height:1.7;}
-.blog-grid{max-width:1200px;margin:0 auto;padding:0 40px 80px;display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:24px;}
-.post-card{text-decoration:none;display:block;background:#141414;border:1px solid rgba(240,180,41,0.08);border-radius:8px;transition:border-color .2s,transform .2s;}
-.post-card:hover{border-color:rgba(240,180,41,0.3);transform:translateY(-2px);}
-.post-card-inner{padding:28px;}
-.post-card .post-date{font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#F0B429;margin-bottom:10px;}
-.post-card .post-title{font-family:'Bebas Neue',sans-serif;font-size:22px;color:#fff;letter-spacing:.5px;line-height:1.1;margin-bottom:16px;}
-.post-card .post-cta{font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#F0B429;}
-footer{text-align:center;padding:40px;border-top:1px solid #1a1a1a;font-size:11px;color:#444;}
-footer a{color:#666;text-decoration:none;}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0F0F0F;color:#d8d8d8;font-family:'Montserrat',sans-serif}
+header{position:fixed;top:0;left:0;right:0;height:70px;padding:0 40px;display:flex;align-items:center;justify-content:space-between;background:rgba(10,10,10,.96);border-bottom:1px solid rgba(240,180,41,.1);z-index:900}
+.logo{font-family:'Bebas Neue',sans-serif;font-size:22px;color:#F0B429;letter-spacing:2px;text-decoration:none}
+nav a{color:#aaa;text-decoration:none;font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-left:28px}
+nav a:hover{color:#fff}
+.ncta{background:#F0B429!important;color:#0F0F0F!important;padding:8px 16px;border-radius:3px}
+.hero{padding:110px 40px 60px;text-align:center;max-width:800px;margin:0 auto}
+.ey{font-size:10px;font-weight:700;letter-spacing:4px;text-transform:uppercase;color:#F0B429;margin-bottom:16px}
+h1{font-family:'Bebas Neue',sans-serif;font-size:clamp(48px,6vw,80px);color:#fff;margin-bottom:16px}
+.sub{color:#666;font-size:14px;line-height:1.7}
+.grid{max-width:1200px;margin:0 auto;padding:0 40px 80px;display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:20px}
+.card{text-decoration:none;background:#141414;border:1px solid rgba(240,180,41,.08);border-radius:8px;padding:28px;transition:border-color .2s,transform .2s;display:block}
+.card:hover{border-color:rgba(240,180,41,.3);transform:translateY(-2px)}
+.card-date{font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#F0B429;margin-bottom:10px}
+.card h2{font-family:'Bebas Neue',sans-serif;font-size:22px;color:#fff;letter-spacing:.5px;line-height:1.1;margin-bottom:14px}
+.more{font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#F0B429}
+footer{text-align:center;padding:40px;border-top:1px solid #1a1a1a;font-size:11px;color:#444}
+footer a{color:#666;text-decoration:none}
 </style>
 </head>
 <body>
 <header>
-  <div class="logo"><a href="/">MISFIT ENTREPRENEUR</a></div>
-  <nav>
-    <a href="/podcast.html">Podcast</a>
-    <a href="/blog.html">Blog</a>
-    <a href="/about.html">About Dave</a>
-    <a href="/truths.html" style="background:#F0B429;color:#0F0F0F;padding:8px 16px;border-radius:3px;">Free Ebook</a>
-  </nav>
+  <a href="/" class="logo">MISFIT ENTREPRENEUR</a>
+  <nav><a href="/podcast.html">Podcast</a><a href="/blog.html">Blog</a><a href="/about.html">About</a><a href="/truths.html" class="ncta">Free Ebook</a></nav>
 </header>
-
 <div class="hero">
-  <div class="eyebrow">Misfit Entrepreneur</div>
+  <div class="ey">Misfit Entrepreneur</div>
   <h1>The Blog</h1>
-  <p>0 posts · 10+ years of entrepreneurship insights from Dave Lukas and world-class guests</p>
+  <p class="sub">38 posts · 10+ years of entrepreneurship insights, mindset, and business strategy from Dave Lukas</p>
 </div>
-
-<div class="blog-grid">
-  
+<div class="grid"><a href="/blog/how-to-inspire-your-team-to-greatness.html" class="card"><div class="card-date">April 02, 2018</div><h2>How to Inspire Your Team to Greatness</h2><div class="more">Read More →</div></a>
+<a href="/blog/from-information-overload-to-entrepreneurial-clarity-how-to-maximize-ai-without-drowning-in-content.html" class="card"><div class="card-date">April 06, 2025</div><h2>From Information Overload to Entrepreneurial Clarity</h2><div class="more">Read More →</div></a>
+<a href="/blog/the-three-cs.html" class="card"><div class="card-date">April 12, 2021</div><h2>The Three Cs</h2><div class="more">Read More →</div></a>
+<a href="/blog/what-to-do-when-you-dont-know-what-to-do.html" class="card"><div class="card-date">April 22, 2019</div><h2>What to Do When You Don&#x27;t Know What to Do</h2><div class="more">Read More →</div></a>
+<a href="/blog/failure-may-be-an-orphan-but-ill-take-that-any-day-of-the-week.html" class="card"><div class="card-date">April 23, 2018</div><h2>Failure May Be an Orphan, But I&#x27;ll Take That Any Day of the Week</h2><div class="more">Read More →</div></a>
+<a href="/blog/the-3-lessons-i-learned-competing-in-the-ironman-world-championships.html" class="card"><div class="card-date">April 25, 2022</div><h2>The 3 Lessons I Learned Competing in the Ironman World Championships</h2><div class="more">Read More →</div></a>
+<a href="/blog/how-to-leverage-ai-to-scale-your-business-in-2025.html" class="card"><div class="card-date">December 30, 2024</div><h2>How to Leverage AI to Scale Your Business in 2025</h2><div class="more">Read More →</div></a>
+<a href="/blog/my-15-minute-sunday-routine-that-dramatically-improves-productivity.html" class="card"><div class="card-date">February 15, 2021</div><h2>My 15-Minute Sunday Routine That Dramatically Improves Productivity</h2><div class="more">Read More →</div></a>
+<a href="/blog/the-10-minute-ceo-how-to-make-smarter-faster-decisions-without-overthinking.html" class="card"><div class="card-date">February 17, 2025</div><h2>The 10-Minute CEO: How to Make Smarter, Faster Decisions Without Overthinking</h2><div class="more">Read More →</div></a>
+<a href="/blog/elon-musks-doge-playbook-how-to-ruthlessly-cut-waste-and-make-your-business-a-profit-machine.html" class="card"><div class="card-date">February 17, 2025</div><h2>Elon Musk&#x27;s DOGE Playbook: How to Ruthlessly Cut Waste and Make Your Business a Profit Machine</h2><div class="more">Read More →</div></a>
+<a href="/blog/why-every-entrepreneur-needs-an-exit-plan.html" class="card"><div class="card-date">January 11, 2025</div><h2>Why Every Entrepreneur Needs an Exit Plan</h2><div class="more">Read More →</div></a>
+<a href="/blog/from-hustler-to-ceo-the-5-shifts-that-separate-founders-from-leaders.html" class="card"><div class="card-date">January 30, 2025</div><h2>From Hustler to CEO: The 5 Shifts That Separate Founders from Leaders</h2><div class="more">Read More →</div></a>
+<a href="/blog/sharpen-your-edge-part-2-the-mental-triggers-of-high-performance-entrepreneurs.html" class="card"><div class="card-date">January 30, 2025</div><h2>Sharpen Your Edge Part 2: Mental Triggers of High Performance</h2><div class="more">Read More →</div></a>
+<a href="/blog/sharpen-your-edge-part-1-how-mental-toughness-and-focus-give-entrepreneurs-the-winning-advantage.html" class="card"><div class="card-date">January 30, 2025</div><h2>Sharpen Your Edge Part 1: Mental Toughness and Focus</h2><div class="more">Read More →</div></a>
+<a href="/blog/do-these-3-things-to-make-a-winning-habit.html" class="card"><div class="card-date">July 06, 2017</div><h2>Do These 3 Things to Make a Winning Habit</h2><div class="more">Read More →</div></a>
+<a href="/blog/know-your-limits-before-you-push-them.html" class="card"><div class="card-date">July 06, 2020</div><h2>Know Your Limits Before You Push Them</h2><div class="more">Read More →</div></a>
+<a href="/blog/dont-fall-prey-to-this-success-killer.html" class="card"><div class="card-date">July 10, 2023</div><h2>Don&#x27;t Fall Prey to This Success Killer</h2><div class="more">Read More →</div></a>
+<a href="/blog/how-to-develop-an-entrepreneur-mindset.html" class="card"><div class="card-date">July 19, 2017</div><h2>How to Develop an Entrepreneur Mindset</h2><div class="more">Read More →</div></a>
+<a href="/blog/5-things-you-can-do-daily-to-improve-your-life.html" class="card"><div class="card-date">July 19, 2017</div><h2>5 Things You Can Do Daily to Improve Your Life</h2><div class="more">Read More →</div></a>
+<a href="/blog/how-to-master-your-inner-game-and-find-your-true-self.html" class="card"><div class="card-date">July 27, 2017</div><h2>How to Master Your Inner Game and Find Your True Self</h2><div class="more">Read More →</div></a>
+<a href="/blog/how-to-start-a-business-with-no-money.html" class="card"><div class="card-date">June 02, 2017</div><h2>How to Start a Business with No Money</h2><div class="more">Read More →</div></a>
+<a href="/blog/3-things-i-learned-from-shark-tanks-kevin-harrington.html" class="card"><div class="card-date">June 12, 2019</div><h2>3 Things I Learned from Shark Tank&#x27;s Kevin Harrington</h2><div class="more">Read More →</div></a>
+<a href="/blog/10-brutal-truths-you-need-to-embrace-to-succeed.html" class="card"><div class="card-date">June 15, 2017</div><h2>10 Brutal Truths You Need to Embrace to Succeed</h2><div class="more">Read More →</div></a>
+<a href="/blog/simple-truths-to-live-by.html" class="card"><div class="card-date">June 15, 2020</div><h2>Simple Truths to Live By</h2><div class="more">Read More →</div></a>
+<a href="/blog/how-to-ride-the-ai-wave-without-getting-washed-away.html" class="card"><div class="card-date">June 22, 2025</div><h2>How to Ride the AI Wave Without Getting Washed Away</h2><div class="more">Read More →</div></a>
+<a href="/blog/how-to-build-a-world-class-network-that-actually-helps-you-win.html" class="card"><div class="card-date">March 01, 2025</div><h2>How to Build a World-Class Network That Actually Helps You Win</h2><div class="more">Read More →</div></a>
+<a href="/blog/how-to-build-a-business-that-prints-cash-without-working-247.html" class="card"><div class="card-date">March 01, 2025</div><h2>How to Build a Business That Prints Cash Without Working 24/7</h2><div class="more">Read More →</div></a>
+<a href="/blog/the-no-bs-guide-to-marketing-that-actually-works.html" class="card"><div class="card-date">March 10, 2025</div><h2>The No-BS Guide to Marketing That Actually Works</h2><div class="more">Read More →</div></a>
+<a href="/blog/the-discipline-gap-why-you-dont-need-more-ideas-you-need-more-follow-through.html" class="card"><div class="card-date">March 28, 2025</div><h2>The Discipline Gap: Why You Don&#x27;t Need More Ideas, You Need More Follow-Through</h2><div class="more">Read More →</div></a>
+<a href="/blog/sales-isnt-a-dirty-word-its-who-we-are.html" class="card"><div class="card-date">March 28, 2025</div><h2>Sales Isn&#x27;t a Dirty Word — It&#x27;s Who We Are</h2><div class="more">Read More →</div></a>
+<a href="/blog/7-surprising-traits-of-resilient-people.html" class="card"><div class="card-date">May 04, 2018</div><h2>7 Surprising Traits of Resilient People</h2><div class="more">Read More →</div></a>
+<a href="/blog/top-5-kpis-every-entrepreneur-should-monitor-weekly-for-business-success.html" class="card"><div class="card-date">May 05, 2024</div><h2>Top 5 KPIs Every Entrepreneur Should Monitor Weekly</h2><div class="more">Read More →</div></a>
+<a href="/blog/why-you-should-treat-every-week-like-race-week.html" class="card"><div class="card-date">May 07, 2019</div><h2>Why You Should Treat Every Week Like Race Week</h2><div class="more">Read More →</div></a>
+<a href="/blog/the-life-changing-power-of-a-checklist.html" class="card"><div class="card-date">May 08, 2018</div><h2>The Life-Changing Power of a Checklist</h2><div class="more">Read More →</div></a>
+<a href="/blog/the-40-1-rule-for-success.html" class="card"><div class="card-date">May 15, 2018</div><h2>The 40+1 Rule for Success</h2><div class="more">Read More →</div></a>
+<a href="/blog/without-this-one-thing-you-cannot-succeed.html" class="card"><div class="card-date">May 16, 2022</div><h2>Without This One Thing You Cannot Succeed</h2><div class="more">Read More →</div></a>
+<a href="/blog/3-success-tips-for-new-grads.html" class="card"><div class="card-date">May 17, 2019</div><h2>3 Success Tips for New Grads</h2><div class="more">Read More →</div></a>
+<a href="/blog/the-more-you-dothe-more-you-can-do.html" class="card"><div class="card-date">May 19, 2018</div><h2>The More You Do, The More You Can Do</h2><div class="more">Read More →</div></a>
 </div>
-
-<footer>
-  <p>© 2025 Misfit Entrepreneur · <a href="/podcast.html">Podcast</a> · <a href="/blog.html">Blog</a> · <a href="/contact.html">Contact</a></p>
-</footer>
+<footer><p>© 2025 Misfit Entrepreneur · <a href="/podcast.html">Podcast</a> · <a href="/blog.html">Blog</a> · <a href="/contact.html">Contact</a></p></footer>
 </body>
 </html>
