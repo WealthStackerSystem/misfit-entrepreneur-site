@@ -1,0 +1,34 @@
+name: Retrofit Show Notes Anchors
+# One-time retrofit that inserts <!-- SHOW_NOTES_START --> and
+# <!-- SHOW_NOTES_END --> comment anchors around the show notes
+# section of every existing episode page. These anchors let
+# Make.com do precise, collision-proof string replacement when
+# updating episode pages from Castmagic output.
+#
+# Safe to re-run: script is idempotent. Files that already
+# contain the anchors are skipped.
+#
+# Run manually from the Actions tab → "Retrofit Show Notes Anchors"
+# → "Run workflow".
+on:
+  workflow_dispatch:
+
+jobs:
+  retrofit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dry run (report what would change)
+        run: python3 retrofit_shownotes_anchors.py
+
+      - name: Apply anchors to all episode pages
+        run: python3 retrofit_shownotes_anchors.py --apply
+
+      - name: Commit retrofit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --staged --quiet || git commit -m "Retrofit: Add show notes anchors for Make.com automation"
+          git push
