@@ -1,0 +1,90 @@
+#!/usr/bin/env python3
+"""
+Builds blog.html index page from blog_index.json
+Run after scrape_blogs.py completes.
+"""
+import json, html
+
+with open("blog_index.json") as f:
+    posts = json.load(f)
+
+# Sort by date descending (most recent first)
+posts.sort(key=lambda x: x.get("date",""), reverse=True)
+
+cards = ""
+for post in posts:
+    slug  = post["slug"]
+    title = html.escape(post.get("title") or slug.replace("-"," ").title())
+    date  = post.get("date","")
+    cards += f'''
+    <a href="/blog/{slug}.html" class="post-card">
+      <div class="post-card-inner">
+        <div class="post-date">{date}</div>
+        <h2 class="post-title">{title}</h2>
+        <div class="post-cta">Read More →</div>
+      </div>
+    </a>'''
+
+page = f'''<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Blog | Misfit Entrepreneur — Dave Lukas</title>
+<meta name="description" content="10+ years of entrepreneurship insights from Dave Lukas and world-class guests on the Misfit Entrepreneur podcast.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{{box-sizing:border-box;margin:0;padding:0;}}
+body{{background:#0F0F0F;color:#d8d8d8;font-family:'Montserrat',sans-serif;}}
+header{{position:fixed;top:0;left:0;right:0;z-index:900;height:70px;padding:0 40px;display:flex;align-items:center;justify-content:space-between;background:rgba(10,10,10,0.96);border-bottom:1px solid rgba(240,180,41,0.1);}}
+.logo a{{text-decoration:none;font-family:'Bebas Neue',sans-serif;font-size:22px;color:#F0B429;letter-spacing:2px;}}
+nav a{{color:#aaa;text-decoration:none;font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-left:28px;}}
+nav a:hover{{color:#fff;}}
+.hero{{padding:110px 40px 60px;text-align:center;max-width:800px;margin:0 auto;}}
+.eyebrow{{font-size:10px;font-weight:700;letter-spacing:4px;text-transform:uppercase;color:#F0B429;margin-bottom:16px;display:flex;align-items:center;justify-content:center;gap:10px;}}
+.eyebrow::before,.eyebrow::after{{content:'';width:26px;height:2px;background:#F0B429;display:block;}}
+.hero h1{{font-family:'Bebas Neue',sans-serif;font-size:clamp(48px,6vw,80px);color:#fff;letter-spacing:1px;margin-bottom:16px;}}
+.hero p{{color:#666;font-size:14px;line-height:1.7;}}
+.blog-grid{{max-width:1200px;margin:0 auto;padding:0 40px 80px;display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:24px;}}
+.post-card{{text-decoration:none;display:block;background:#141414;border:1px solid rgba(240,180,41,0.08);border-radius:8px;transition:border-color .2s,transform .2s;}}
+.post-card:hover{{border-color:rgba(240,180,41,0.3);transform:translateY(-2px);}}
+.post-card-inner{{padding:28px;}}
+.post-card .post-date{{font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#F0B429;margin-bottom:10px;}}
+.post-card .post-title{{font-family:'Bebas Neue',sans-serif;font-size:22px;color:#fff;letter-spacing:.5px;line-height:1.1;margin-bottom:16px;}}
+.post-card .post-cta{{font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#F0B429;}}
+footer{{text-align:center;padding:40px;border-top:1px solid #1a1a1a;font-size:11px;color:#444;}}
+footer a{{color:#666;text-decoration:none;}}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo"><a href="/">MISFIT ENTREPRENEUR</a></div>
+  <nav>
+    <a href="/podcast.html">Podcast</a>
+    <a href="/blog.html">Blog</a>
+    <a href="/about.html">About Dave</a>
+    <a href="/truths.html" style="background:#F0B429;color:#0F0F0F;padding:8px 16px;border-radius:3px;">Free Ebook</a>
+  </nav>
+</header>
+
+<div class="hero">
+  <div class="eyebrow">Misfit Entrepreneur</div>
+  <h1>The Blog</h1>
+  <p>{len(posts)} posts · 10+ years of entrepreneurship insights from Dave Lukas and world-class guests</p>
+</div>
+
+<div class="blog-grid">
+  {cards}
+</div>
+
+<footer>
+  <p>© 2025 Misfit Entrepreneur · <a href="/podcast.html">Podcast</a> · <a href="/blog.html">Blog</a> · <a href="/contact.html">Contact</a></p>
+</footer>
+</body>
+</html>'''
+
+with open("blog.html", "w", encoding="utf-8") as f:
+    f.write(page)
+
+print(f"blog.html built with {len(posts)} posts")
