@@ -14,7 +14,7 @@ jobs:
         with:
           python-version: '3.11'
       - name: Run fixer
-        run: python fix_episode_pages.py
+        run: python fix_episodes.py
       - name: Commit patched pages
         run: |
           git config user.name "github-actions[bot]"
