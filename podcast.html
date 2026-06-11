@@ -316,11 +316,30 @@ function parseEpNum(title) {
   return m ? parseInt(m[1]) : null;
 }
 
+async function fetchRSS() {
+  const RSS_DIRECT = 'https://rss.libsyn.com/shows/83038/destinations/390028.xml';
+  const sources = [
+    PROXY,
+    RSS_DIRECT,
+    'https://api.allorigins.win/raw?url=' + encodeURIComponent(RSS_DIRECT)
+  ];
+  for (const src of sources) {
+    try {
+      const res = await fetch(src);
+      if (!res.ok) { console.warn('RSS source failed (' + res.status + '): ' + src); continue; }
+      const xml = await res.text();
+      if (xml && xml.trim()[0] === '<') { console.log('RSS loaded from: ' + src); return xml; }
+      console.warn('RSS source returned non-XML: ' + src);
+    } catch(e) { console.warn('RSS source error: ' + src, e); }
+  }
+  throw new Error('All RSS sources failed');
+}
+
 async function loadEps() {
   try {
     // Fetch RSS + episode index in parallel
-    const [rssRes, idxRes] = await Promise.all([
-      fetch(PROXY),
+    const [xml, idxRes] = await Promise.all([
+      fetchRSS(),
       fetch('/episode_index.json').catch(() => null)
     ]);
     if (idxRes && idxRes.ok) {
@@ -330,9 +349,6 @@ async function loadEps() {
         console.log('Index: ' + idx.length + ' slugs loaded');
       } catch(e) { console.warn('index parse error', e); }
     }
-    const res = rssRes;
-    if (!res.ok) throw new Error('Proxy returned ' + res.status);
-    const xml = await res.text();
     if (!xml || xml.trim()[0] !== '<') throw new Error('Invalid XML');
 
     const doc   = new DOMParser().parseFromString(xml, 'text/xml');
