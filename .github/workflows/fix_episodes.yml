@@ -1,20 +1,25 @@
-name: Fix Episode Pages
+name: Fix Episode Pages (links + book image)
 on:
-  workflow_dispatch:
-
+  workflow_dispatch:  # Manual trigger — click Run in GitHub Actions tab
 jobs:
   fix:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Fix Spotify links and ep-artwork images
-        run: python3 fix_episodes.py
-
-      - name: Commit fixes
+      - name: Checkout repo
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run fixer
+        run: python fix_episode_pages.py
+      - name: Commit patched pages
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git diff --staged --quiet || git commit -m "Auto: Fix Spotify + ep-artwork (correct target)"
+          git add episodes/
+          git diff --staged --quiet || git commit -m "Fix: episode page links (/truths -> /code) + Misfit Code book image"
+          git pull --rebase origin main
           git push
