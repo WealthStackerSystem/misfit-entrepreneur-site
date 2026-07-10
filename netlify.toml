@@ -27,6 +27,20 @@
   to = "/playbook/"
   status = 301
 
+# ─── Partner pages: unlisted, keep out of search results ───
+# Order matters: the more specific /partner/* rule must come
+# BEFORE the catch-all so it isn't shadowed.
+
+[[headers]]
+  for = "/partner"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow, noarchive, nosnippet"
+
+[[headers]]
+  for = "/partner/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow, noarchive, nosnippet"
+
 [[headers]]
   for = "/netlify/functions/*"
   [headers.values]
