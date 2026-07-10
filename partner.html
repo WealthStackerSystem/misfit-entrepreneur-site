@@ -89,7 +89,6 @@
         border:1px solid var(--line);background:#fafafa;color:var(--black);}
   input:focus,select:focus,textarea:focus{outline:0;border-color:var(--gold);background:#fff;}
   textarea{min-height:96px;resize:vertical;}
-  .hp{position:absolute;left:-9999px;}
   .fine{font-size:11.5px;color:var(--grey);margin-top:10px;}
 
   footer{margin:44px 48px 0;background:var(--black);color:#fff;padding:32px 34px;text-align:center;}
@@ -246,10 +245,8 @@
   <h2>Start the Conversation</h2>
   <p>Tell us what you're trying to accomplish. Dave reads every one of these. If it's not a fit, we'll tell you — and point you somewhere better.</p>
 
-  <form name="sponsor-inquiry" method="POST" data-netlify="true" netlify-honeypot="company-website" action="/partner-thanks.html">
+  <form name="sponsor-inquiry" method="POST" data-netlify="true" action="/partner-thanks.html">
     <input type="hidden" name="form-name" value="sponsor-inquiry">
-    <p class="hp"><label>Leave this blank: <input name="company-website"></label></p>
-
     <div class="frow">
       <div class="f"><label for="name">Your Name</label><input id="name" name="name" type="text" required></div>
       <div class="f"><label for="company">Company</label><input id="company" name="company" type="text" required></div>
