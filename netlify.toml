@@ -27,12 +27,6 @@
   to = "/playbook/"
   status = 301
 
-[[redirects]]
-  from = "/partner"
-  to = "/partner/"
-  status = 301
-
-# Partner pages: unlisted, keep out of search results
 [[headers]]
   for = "/partner/*"
   [headers.values]
