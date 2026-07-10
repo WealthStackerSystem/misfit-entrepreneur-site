@@ -27,15 +27,12 @@
   to = "/playbook/"
   status = 301
 
-# ─── Partner pages: unlisted, keep out of search results ───
-# Order matters: the more specific /partner/* rule must come
-# BEFORE the catch-all so it isn't shadowed.
+[[redirects]]
+  from = "/partner"
+  to = "/partner/"
+  status = 301
 
-[[headers]]
-  for = "/partner"
-  [headers.values]
-    X-Robots-Tag = "noindex, nofollow, noarchive, nosnippet"
-
+# Partner pages: unlisted, keep out of search results
 [[headers]]
   for = "/partner/*"
   [headers.values]
