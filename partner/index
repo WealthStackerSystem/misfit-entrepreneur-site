@@ -239,14 +239,14 @@
 
 <div class="deeper">
   <p><b>Want the full picture?</b> Audience breakdown, distribution footprint, onboarding process, and what we ask of partners.</p>
-  <a class="btn" href="PREVIEW_2_media_kit.html">Read the Full Media Kit →</a>
+  <a class="btn" href="/partner/kit">Read the Full Media Kit →</a>
 </div>
 
 <section id="inquire">
   <h2>Start the Conversation</h2>
   <p>Tell us what you're trying to accomplish. Dave reads every one of these. If it's not a fit, we'll tell you — and point you somewhere better.</p>
 
-  <form name="sponsor-inquiry" method="POST" data-netlify="true" netlify-honeypot="company-website" action="PREVIEW_3_thank_you.html">
+  <form name="sponsor-inquiry" method="POST" data-netlify="true" netlify-honeypot="company-website" action="/partner/thanks">
     <input type="hidden" name="form-name" value="sponsor-inquiry">
     <p class="hp"><label>Leave this blank: <input name="company-website"></label></p>
 
