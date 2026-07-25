@@ -1,56 +1,93 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { createClient } from '@/lib/supabase-browser';
+import Nav from './components/Nav';
+
+type Counts = {
+  episodes: number;
+  articles: number;
+  sponsors: number;
+};
+
 export default function DashboardPage() {
+  const [counts, setCounts] = useState<Counts | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function load() {
+      const supabase = createClient();
+
+      const [ep, ar, sp] = await Promise.all([
+        supabase.from('episodes').select('*', { count: 'exact', head: true }),
+        supabase.from('articles').select('*', { count: 'exact', head: true }),
+        supabase.from('sponsors').select('*', { count: 'exact', head: true }),
+      ]);
+
+      if (ep.error || ar.error || sp.error) {
+        setError(
+          ep.error?.message || ar.error?.message || sp.error?.message || 'Unknown error'
+        );
+        return;
+      }
+
+      setCounts({
+        episodes: ep.count ?? 0,
+        articles: ar.count ?? 0,
+        sponsors: sp.count ?? 0,
+      });
+    }
+
+    load();
+  }, []);
+
   return (
     <div className="shell">
-      <div className="topbar">
-        <div className="brand">MISFIT ADMIN</div>
-        <div className="who">Build check</div>
-      </div>
-
-      <div className="nav">
-        <a href="/" className="active">Dashboard</a>
-        <a href="/">New Episode</a>
-        <a href="/">Episodes</a>
-        <a href="/">Blog</a>
-        <a href="/">Sponsors</a>
-        <a href="/">Social</a>
-        <a href="/">Settings</a>
-      </div>
+      <Nav />
 
       <div className="main">
-        <div className="eyebrow">Step 3 Complete</div>
-        <h1>The build pipeline works.</h1>
-        <p className="muted" style={{ marginTop: 12, marginBottom: 28 }}>
-          If you are reading this on a Netlify URL, Next.js compiled and
-          deployed successfully. Nothing here is connected to Supabase or
-          Anthropic yet — that comes next.
-        </p>
+        <div className="eyebrow">Dashboard</div>
+        <h1>Misfit Production System</h1>
 
-        <div className="card-grid">
-          <div className="card">
-            <div className="eyebrow">Next up</div>
-            <h3>Authentication</h3>
-            <p className="muted" style={{ marginTop: 8, fontSize: 14 }}>
-              Supabase clients, middleware auth gate, and a login screen.
-            </p>
-          </div>
+        {error && <div className="msg msg-error" style={{ marginTop: 20 }}>{error}</div>}
 
-          <div className="card">
-            <div className="eyebrow">Then</div>
-            <h3>New Episode</h3>
-            <p className="muted" style={{ marginTop: 8, fontSize: 14 }}>
-              Paste a transcript, add guest details, generate every asset.
-            </p>
-          </div>
+        {!counts && !error && (
+          <p className="muted" style={{ marginTop: 16 }}>Loading…</p>
+        )}
 
-          <div className="card">
-            <div className="eyebrow">After that</div>
-            <h3>Generation Engine</h3>
-            <p className="muted" style={{ marginTop: 8, fontSize: 14 }}>
-              Anthropic routes writing show notes, emails, the Minute, and
-              social posts.
+        {counts && (
+          <>
+            <p className="muted" style={{ marginTop: 12, marginBottom: 28 }}>
+              Connected to Supabase. Live counts below.
             </p>
-          </div>
-        </div>
+
+            <div className="card-grid">
+              <div className="card">
+                <div className="eyebrow">Episodes</div>
+                <h2>{counts.episodes}</h2>
+                <p className="muted" style={{ fontSize: 14, marginTop: 6 }}>
+                  Back catalog not yet imported
+                </p>
+              </div>
+
+              <div className="card">
+                <div className="eyebrow">Blog Posts</div>
+                <h2>{counts.articles}</h2>
+                <p className="muted" style={{ fontSize: 14, marginTop: 6 }}>
+                  37 existing posts to import
+                </p>
+              </div>
+
+              <div className="card">
+                <div className="eyebrow">Sponsors</div>
+                <h2>{counts.sponsors}</h2>
+                <p className="muted" style={{ fontSize: 14, marginTop: 6 }}>
+                  <a href="/sponsors">Manage sponsors →</a>
+                </p>
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
