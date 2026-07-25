@@ -51,6 +51,7 @@ body{margin:0;padding:20px;background:#e8e8e8;font-family:-apple-system,BlinkMac
 .email-wrap{max-width:640px;margin:0 auto;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.08);}
 .email-header{background:#0F0F0F;padding:26px 32px;border-bottom:3px solid #F0B429;text-align:center;}
 .email-header .brand{color:#F0B429;font-size:20px;font-weight:700;letter-spacing:4px;text-transform:uppercase;}
+.email-header .sub{color:#666;font-size:11px;letter-spacing:2px;text-transform:uppercase;margin-top:6px;}
 .email-body{padding:36px 40px;color:#1a1a1a;line-height:1.65;font-size:15px;}
 .email-body p{margin:0 0 16px 0;}
 .email-body h2{color:#0F0F0F;font-size:20px;font-weight:600;margin:32px 0 12px 0;}
@@ -83,6 +84,7 @@ a{color:#0F0F0F;}
 
 <div class="email-header">
   <div class="brand">Misfit Entrepreneur</div>
+  <div class="sub">Episode ${num}</div>
 </div>
 
 <div class="email-body">
@@ -91,7 +93,7 @@ a{color:#0F0F0F;}
 
 <p>Your episode is live.</p>
 
-<p>Before anything else &mdash; thank you. ${parts.opener_line || ''}</p>
+<p>Before anything else &mdash; thank you. ${esc(parts.opener_line || '')}</p>
 
 <p><strong>Here it is:</strong></p>
 
