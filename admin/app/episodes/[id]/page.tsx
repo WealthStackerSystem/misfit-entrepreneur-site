@@ -53,6 +53,9 @@ export default function EpisodeDetailPage() {
   const [emailHtml, setEmailHtml] = useState<string | null>(null);
   const [buildingEmail, setBuildingEmail] = useState(false);
 
+  const [publishing, setPublishing] = useState(false);
+  const [publishResult, setPublishResult] = useState<string | null>(null);
+
   const [titleOptions, setTitleOptions] = useState<string[]>([]);
   const [customTitle, setCustomTitle] = useState('');
   const [savingTitle, setSavingTitle] = useState(false);
@@ -397,6 +400,42 @@ export default function EpisodeDetailPage() {
     setBuildingEmail(false);
   }
 
+  async function publish() {
+    const ok = confirm(
+      'Publish this page to misfitentrepreneur.com? It will be live within about two minutes.'
+    );
+    if (!ok) return;
+
+    setPublishing(true);
+    setError(null);
+    setPublishResult(null);
+
+    try {
+      const res = await fetch('/api/publish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ episodeId: id }),
+      });
+
+      const data = await res.json();
+
+      if (!data.ok) {
+        setError(data.error || 'Publish failed');
+        setPublishing(false);
+        return;
+      }
+
+      setPublishResult(
+        'Page ' + data.action + ' at ' + data.url + '. Netlify is deploying now.'
+      );
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Publish failed');
+    }
+
+    setPublishing(false);
+  }
+
   function copyHtml() {
     if (previewHtml) {
       navigator.clipboard.writeText(previewHtml);
@@ -417,7 +456,7 @@ export default function EpisodeDetailPage() {
     return assets.some((a) => a.asset_type === type);
   }
 
-  const busy = running || building || buildingEmail;
+  const busy = running || building || buildingEmail || publishing;
 
   return (
     <div className="shell">
@@ -590,6 +629,22 @@ export default function EpisodeDetailPage() {
                 />
               </div>
             )}
+
+            <div className="card" style={{ marginBottom: 20 }}>
+              <div className="eyebrow">Publish</div>
+              <h3 style={{ marginBottom: 8 }}>Push to Live Site</h3>
+              <p className="muted" style={{ fontSize: 14, marginBottom: 16 }}>
+                Commits the page to GitHub at episodes/ep-{episode.episode_number}-episode.html. Netlify deploys within about two minutes. Safe to run again after any change.
+              </p>
+
+              {publishResult !== null && (
+                <div className="msg msg-success">{publishResult}</div>
+              )}
+
+              <button className="btn" onClick={publish} disabled={busy}>
+                {publishing ? 'Publishing...' : 'Publish to Site'}
+              </button>
+            </div>
 
             <div className="card" style={{ marginBottom: 20 }}>
               <div className="eyebrow">Guest Email</div>
