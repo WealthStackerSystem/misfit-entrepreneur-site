@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase-browser';
 import { buildShowNotesHtml, type ShowNotesData, type Section } from '@/lib/shownotes-template';
+import { buildGuestEmailHtml, type GuestEmailParts } from '@/lib/guest-email-template';
 import { stripFences } from '@/lib/anthropic';
 import Nav from '../../components/Nav';
 
@@ -49,6 +50,9 @@ export default function EpisodeDetailPage() {
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [building, setBuilding] = useState(false);
 
+  const [emailHtml, setEmailHtml] = useState<string | null>(null);
+  const [buildingEmail, setBuildingEmail] = useState(false);
+
   const [titleOptions, setTitleOptions] = useState<string[]>([]);
   const [customTitle, setCustomTitle] = useState('');
   const [savingTitle, setSavingTitle] = useState(false);
@@ -80,7 +84,6 @@ export default function EpisodeDetailPage() {
     const rows = (as as Asset[]) ?? [];
     setAssets(rows);
 
-    // Pull title options out of the meta asset
     const meta = rows.find((r) => r.asset_type === 'show_notes_meta');
     if (meta && meta.content) {
       try {
@@ -89,7 +92,7 @@ export default function EpisodeDetailPage() {
           setTitleOptions(parsed.title_options as string[]);
         }
       } catch {
-        // ignore parse issues here; buildPreview reports them properly
+        // buildPreview surfaces parse problems properly
       }
     }
 
@@ -128,6 +131,7 @@ export default function EpisodeDetailPage() {
     setSavingTitle(false);
     setTitleSaved(true);
     setPreviewHtml(null);
+    setEmailHtml(null);
     load();
   }
 
@@ -206,8 +210,13 @@ export default function EpisodeDetailPage() {
     setRunning(true);
     setError(null);
     setOutput('');
-    setPreviewHtml(null);
     setStepIndex(STEPS.findIndex((s) => s.type === assetType));
+
+    if (assetType === 'guest_email_parts') {
+      setEmailHtml(null);
+    } else {
+      setPreviewHtml(null);
+    }
 
     try {
       await runOne(assetType);
@@ -244,6 +253,7 @@ export default function EpisodeDetailPage() {
 
       for (const r of rows) {
         if (!r.content) continue;
+        if (r.asset_type.indexOf('show_notes_') !== 0) continue;
 
         let parsed: Record<string, unknown>;
         try {
@@ -309,9 +319,93 @@ export default function EpisodeDetailPage() {
     setBuilding(false);
   }
 
+  async function buildGuestEmail() {
+    setBuildingEmail(true);
+    setError(null);
+
+    try {
+      const supabase = createClient();
+
+      const { data: rows } = await supabase
+        .from('episode_assets')
+        .select('asset_type, content')
+        .eq('episode_id', id)
+        .eq('is_current', true);
+
+      const emailAsset = rows?.find((r) => r.asset_type === 'guest_email_parts');
+
+      if (!emailAsset || !emailAsset.content) {
+        setError('Generate the guest email copy first.');
+        setBuildingEmail(false);
+        return;
+      }
+
+      let parts: GuestEmailParts;
+      try {
+        parts = JSON.parse(stripFences(emailAsset.content));
+      } catch {
+        setError('Could not parse guest email output. Regenerate it.');
+        setBuildingEmail(false);
+        return;
+      }
+
+      const { data: ep } = await supabase
+        .from('episodes')
+        .select('episode_number, title, guest_name, guest_company, release_date')
+        .eq('id', id)
+        .single();
+
+      if (!ep) {
+        setError('Could not load episode data.');
+        setBuildingEmail(false);
+        return;
+      }
+
+      const { data: settingsRows } = await supabase
+        .from('settings')
+        .select('key, value');
+
+      const s: Record<string, string> = {};
+      if (settingsRows) {
+        for (const row of settingsRows) {
+          if (row.value) s[row.key] = row.value;
+        }
+      }
+
+      const epRecord = ep as Record<string, unknown>;
+
+      const html = buildGuestEmailHtml(
+        parts,
+        {
+          episode_number: epRecord.episode_number as number,
+          title: (epRecord.title as string) || null,
+          guest_name: (epRecord.guest_name as string) || null,
+          guest_company: (epRecord.guest_company as string) || null,
+          release_date: (epRecord.release_date as string) || null,
+        },
+        s.calendly_url || '#',
+        s.apple_podcasts_url || '#',
+        s.spotify_url || '#',
+        s.youtube_channel_url || '#'
+      );
+
+      setEmailHtml(html);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Build failed');
+    }
+
+    setBuildingEmail(false);
+  }
+
   function copyHtml() {
     if (previewHtml) {
       navigator.clipboard.writeText(previewHtml);
+    }
+  }
+
+  function copyEmailHtml() {
+    if (emailHtml) {
+      navigator.clipboard.writeText(emailHtml);
     }
   }
 
@@ -322,6 +416,8 @@ export default function EpisodeDetailPage() {
   function hasAsset(type: string): boolean {
     return assets.some((a) => a.asset_type === type);
   }
+
+  const busy = running || building || buildingEmail;
 
   return (
     <div className="shell">
@@ -372,7 +468,7 @@ export default function EpisodeDetailPage() {
                       }}
                     >
                       <span>{marker}{s.label}</span>
-                      {!running && (
+                      {!busy && (
                         <button
                           className="btn btn-ghost"
                           style={{ padding: '5px 12px', fontSize: 11.5 }}
@@ -386,7 +482,7 @@ export default function EpisodeDetailPage() {
                 })}
               </div>
 
-              <button className="btn" onClick={runAll} disabled={running || building}>
+              <button className="btn" onClick={runAll} disabled={busy}>
                 {running ? 'Generating...' : 'Generate All Show Notes'}
               </button>
             </div>
@@ -396,7 +492,7 @@ export default function EpisodeDetailPage() {
                 <div className="eyebrow">Choose Title</div>
                 <h3 style={{ marginBottom: 8 }}>Episode Title</h3>
                 <p className="muted" style={{ fontSize: 14, marginBottom: 16 }}>
-                  Pick one or write your own. This is what appears on the page, in search results, and in the schema markup.
+                  Pick one or write your own. This appears on the page, in search results, and in the schema markup.
                 </p>
 
                 {titleSaved && <div className="msg msg-success">Title saved.</div>}
@@ -467,7 +563,7 @@ export default function EpisodeDetailPage() {
                 Merges the four generated pieces into the finished page.
               </p>
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                <button className="btn" onClick={buildPreview} disabled={building || running}>
+                <button className="btn" onClick={buildPreview} disabled={busy}>
                   {building ? 'Building...' : 'Build Preview'}
                 </button>
                 {previewHtml !== null && (
@@ -490,6 +586,48 @@ export default function EpisodeDetailPage() {
                     border: '1px solid rgba(255,255,255,.1)',
                     borderRadius: 6,
                     background: '#0e0e0e',
+                  }}
+                />
+              </div>
+            )}
+
+            <div className="card" style={{ marginBottom: 20 }}>
+              <div className="eyebrow">Guest Email</div>
+              <h3 style={{ marginBottom: 8 }}>Launch Day Email</h3>
+              <p className="muted" style={{ fontSize: 14, marginBottom: 16 }}>
+                Writes the personalized opener plus three ready-to-post social posts in the guest voice, then assembles the full email. Reads the show notes, so run those first.
+              </p>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <button
+                  className="btn btn-ghost"
+                  onClick={() => runSingle('guest_email_parts')}
+                  disabled={busy}
+                >
+                  {hasAsset('guest_email_parts') ? 'Regenerate Copy' : 'Generate Copy'}
+                </button>
+                <button className="btn" onClick={buildGuestEmail} disabled={busy}>
+                  {buildingEmail ? 'Building...' : 'Build Email'}
+                </button>
+                {emailHtml !== null && (
+                  <button className="btn btn-ghost" onClick={copyEmailHtml}>
+                    Copy HTML
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {emailHtml !== null && (
+              <div className="card" style={{ marginBottom: 20 }}>
+                <div className="eyebrow">Email Preview</div>
+                <iframe
+                  srcDoc={emailHtml}
+                  title="Guest email preview"
+                  style={{
+                    width: '100%',
+                    height: 700,
+                    border: '1px solid rgba(255,255,255,.1)',
+                    borderRadius: 6,
+                    background: '#e8e8e8',
                   }}
                 />
               </div>
