@@ -20,8 +20,14 @@ type Asset = {
   asset_type: string;
   content: string | null;
   version: number;
-  generated_at: string;
 };
+
+const STEPS: { type: string; label: string }[] = [
+  { type: 'show_notes_meta', label: 'Titles, bio, and summary' },
+  { type: 'show_notes_sections_a', label: 'Sections 1 to 4' },
+  { type: 'show_notes_sections_b', label: 'Sections 5 to 7' },
+  { type: 'show_notes_extras', label: 'Quote, Misfit 3, takeaways, clips' },
+];
 
 export default function EpisodeDetailPage() {
   const params = useParams();
@@ -32,7 +38,9 @@ export default function EpisodeDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [generating, setGenerating] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [stepIndex, setStepIndex] = useState(-1);
+  const [done, setDone] = useState<string[]>([]);
   const [output, setOutput] = useState('');
   const outputRef = useRef<HTMLPreElement | null>(null);
 
@@ -55,7 +63,7 @@ export default function EpisodeDetailPage() {
 
     const { data: as } = await supabase
       .from('episode_assets')
-      .select('asset_type, content, version, generated_at')
+      .select('asset_type, content, version')
       .eq('episode_id', id)
       .eq('is_current', true);
 
@@ -73,53 +81,100 @@ export default function EpisodeDetailPage() {
     }
   }, [output]);
 
-  async function generate(assetType: string) {
-    setGenerating(true);
-    setOutput('');
+  async function runOne(assetType: string): Promise<boolean> {
+    const res = await fetch('/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ episodeId: id, assetType }),
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      setError(text || 'Generation failed on ' + assetType);
+      return false;
+    }
+
+    const reader = res.body?.getReader();
+    if (!reader) {
+      setError('No response stream');
+      return false;
+    }
+
+    const decoder = new TextDecoder();
+    let acc = '';
+
+    while (true) {
+      const { done: streamDone, value } = await reader.read();
+      if (streamDone) break;
+      acc += decoder.decode(value, { stream: true });
+      setOutput(acc);
+    }
+
+    if (acc.indexOf('[GENERATION ERROR]') !== -1) {
+      setError('Model returned an error on ' + assetType);
+      return false;
+    }
+
+    return true;
+  }
+
+  async function runAll() {
+    setRunning(true);
     setError(null);
+    setDone([]);
+    setOutput('');
+
+    for (let i = 0; i < STEPS.length; i++) {
+      setStepIndex(i);
+      setOutput('');
+
+      let ok = false;
+      try {
+        ok = await runOne(STEPS[i].type);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Unknown error');
+        ok = false;
+      }
+
+      if (!ok) {
+        setRunning(false);
+        setStepIndex(-1);
+        load();
+        return;
+      }
+
+      setDone((prev) => prev.concat(STEPS[i].type));
+    }
+
+    setRunning(false);
+    setStepIndex(-1);
+    load();
+  }
+
+  async function runSingle(assetType: string) {
+    setRunning(true);
+    setError(null);
+    setOutput('');
+    setStepIndex(STEPS.findIndex((s) => s.type === assetType));
 
     try {
-      const res = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ episodeId: id, assetType }),
-      });
-
-      if (!res.ok) {
-        const text = await res.text();
-        setError(text || 'Generation failed');
-        setGenerating(false);
-        return;
-      }
-
-      const reader = res.body?.getReader();
-      if (!reader) {
-        setError('No response stream');
-        setGenerating(false);
-        return;
-      }
-
-      const decoder = new TextDecoder();
-      let acc = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        acc += decoder.decode(value, { stream: true });
-        setOutput(acc);
-      }
-
-      setGenerating(false);
-      load();
+      await runOne(assetType);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
-      setGenerating(false);
     }
+
+    setRunning(false);
+    setStepIndex(-1);
+    load();
   }
 
   const wordCount = episode?.transcript
     ? episode.transcript.trim().split(/\s+/).length
     : 0;
+
+  function hasAsset(type: string): boolean {
+    return assets.some((a) => a.asset_type === type);
+  }
 
   return (
     <div className="shell">
@@ -144,21 +199,52 @@ export default function EpisodeDetailPage() {
 
             <div className="card" style={{ marginBottom: 20 }}>
               <div className="eyebrow">Generate</div>
-              <h3 style={{ marginBottom: 14 }}>Show Notes</h3>
-              <p className="muted" style={{ fontSize: 14, marginBottom: 16 }}>
-                Produces 7 sections, title options, best quote, the Misfit 3,
-                takeaways, and clip moments. Takes 60 to 90 seconds.
+              <h3 style={{ marginBottom: 8 }}>Show Notes</h3>
+              <p className="muted" style={{ fontSize: 14, marginBottom: 18 }}>
+                Runs in four short passes so no single call times out. About 90 seconds total.
               </p>
-              <button
-                className="btn"
-                onClick={() => generate('show_notes_json')}
-                disabled={generating}
-              >
-                {generating ? 'Generating...' : 'Generate Show Notes'}
+
+              <div style={{ marginBottom: 18 }}>
+                {STEPS.map((s, i) => {
+                  const isDone = done.indexOf(s.type) !== -1 || hasAsset(s.type);
+                  const isActive = stepIndex === i;
+                  return (
+                    <div
+                      key={s.type}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '9px 0',
+                        borderBottom: '1px solid rgba(255,255,255,.05)',
+                        fontSize: 14,
+                        color: isActive ? '#F0B429' : isDone ? '#e8e8e8' : '#8f8f8f',
+                      }}
+                    >
+                      <span>
+                        {isActive ? '> ' : isDone ? 'OK ' : '- '}
+                        {s.label}
+                      </span>
+                      {!running && (
+                        <button
+                          className="btn btn-ghost"
+                          style={{ padding: '5px 12px', fontSize: 11.5 }}
+                          onClick={() => runSingle(s.type)}
+                        >
+                          {isDone ? 'Redo' : 'Run'}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              <button className="btn" onClick={runAll} disabled={running}>
+                {running ? 'Generating...' : 'Generate All Show Notes'}
               </button>
             </div>
 
-            {(output.length > 0 || generating) && (
+            {(output.length > 0 || running) && (
               <div className="card" style={{ marginBottom: 20 }}>
                 <div className="eyebrow">Live Output</div>
                 <pre
@@ -171,7 +257,7 @@ export default function EpisodeDetailPage() {
                     fontSize: 12.5,
                     lineHeight: 1.6,
                     color: '#b0b0b0',
-                    maxHeight: 420,
+                    maxHeight: 360,
                     overflowY: 'auto',
                     whiteSpace: 'pre-wrap',
                     wordBreak: 'break-word',
