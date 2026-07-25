@@ -31,14 +31,35 @@ export function buildGuestEmailHtml(
 ): string {
   const guest = ep.guest_name || '';
   const firstName = guest.split(' ')[0] || 'there';
-  const title = ep.title || 'your episode';
   const num = ep.episode_number;
   const pageUrl =
     'https://misfitentrepreneur.com/episodes/ep-' + num + '-episode.html';
 
-  const li = (parts.linkedin_post || '').split('{{URL}}').join(pageUrl);
-  const xp = (parts.x_post || '').split('{{URL}}').join(pageUrl);
-  const ig = (parts.instagram_caption || '').split('{{URL}}').join(pageUrl);
+  // The model is told to emit [EPISODE_LINK], but it sometimes invents its own
+  // placeholder. Accept the common variants rather than fighting for one exact
+  // string on every generation.
+  function injectUrl(text: string): string {
+    let out = text || '';
+    const tokens = [
+      '[EPISODE_LINK]',
+      '{{URL}}',
+      '{{url}}',
+      '[LINK]',
+      '[link]',
+      '[URL]',
+      '[url]',
+      '[EPISODE LINK]',
+      '[episode_link]',
+    ];
+    for (const t of tokens) {
+      out = out.split(t).join(pageUrl);
+    }
+    return out;
+  }
+
+  const li = injectUrl(parts.linkedin_post || '');
+  const xp = injectUrl(parts.x_post || '');
+  const ig = injectUrl(parts.instagram_caption || '');
 
   return `<!DOCTYPE html>
 <html lang="en">
