@@ -49,6 +49,11 @@ export default function EpisodeDetailPage() {
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [building, setBuilding] = useState(false);
 
+  const [titleOptions, setTitleOptions] = useState<string[]>([]);
+  const [customTitle, setCustomTitle] = useState('');
+  const [savingTitle, setSavingTitle] = useState(false);
+  const [titleSaved, setTitleSaved] = useState(false);
+
   async function load() {
     const supabase = createClient();
 
@@ -72,7 +77,22 @@ export default function EpisodeDetailPage() {
       .eq('episode_id', id)
       .eq('is_current', true);
 
-    setAssets((as as Asset[]) ?? []);
+    const rows = (as as Asset[]) ?? [];
+    setAssets(rows);
+
+    // Pull title options out of the meta asset
+    const meta = rows.find((r) => r.asset_type === 'show_notes_meta');
+    if (meta && meta.content) {
+      try {
+        const parsed = JSON.parse(stripFences(meta.content));
+        if (Array.isArray(parsed.title_options)) {
+          setTitleOptions(parsed.title_options as string[]);
+        }
+      } catch {
+        // ignore parse issues here; buildPreview reports them properly
+      }
+    }
+
     setLoading(false);
   }
 
@@ -85,6 +105,31 @@ export default function EpisodeDetailPage() {
       outputRef.current.scrollTop = outputRef.current.scrollHeight;
     }
   }, [output]);
+
+  async function saveTitle(chosen: string) {
+    if (chosen.trim().length === 0) return;
+
+    setSavingTitle(true);
+    setTitleSaved(false);
+    setError(null);
+
+    const supabase = createClient();
+    const { error: upErr } = await supabase
+      .from('episodes')
+      .update({ title: chosen.trim() })
+      .eq('id', id);
+
+    if (upErr) {
+      setError(upErr.message);
+      setSavingTitle(false);
+      return;
+    }
+
+    setSavingTitle(false);
+    setTitleSaved(true);
+    setPreviewHtml(null);
+    load();
+  }
 
   async function runOne(assetType: string): Promise<boolean> {
     const res = await fetch('/api/generate', {
@@ -224,7 +269,7 @@ export default function EpisodeDetailPage() {
 
       const { data: ep } = await supabase
         .from('episodes')
-        .select('episode_number, guest_name, guest_company, release_date, libsyn_player_embed, guest_links, transcript')
+        .select('episode_number, title, guest_name, guest_company, release_date, libsyn_player_embed, guest_links, transcript')
         .eq('id', id)
         .single();
 
@@ -245,6 +290,7 @@ export default function EpisodeDetailPage() {
         merged,
         {
           episode_number: epRecord.episode_number as number,
+          title: (epRecord.title as string) || null,
           guest_name: (epRecord.guest_name as string) || null,
           guest_company: (epRecord.guest_company as string) || null,
           release_date: (epRecord.release_date as string) || null,
@@ -344,6 +390,75 @@ export default function EpisodeDetailPage() {
                 {running ? 'Generating...' : 'Generate All Show Notes'}
               </button>
             </div>
+
+            {titleOptions.length > 0 && (
+              <div className="card" style={{ marginBottom: 20 }}>
+                <div className="eyebrow">Choose Title</div>
+                <h3 style={{ marginBottom: 8 }}>Episode Title</h3>
+                <p className="muted" style={{ fontSize: 14, marginBottom: 16 }}>
+                  Pick one or write your own. This is what appears on the page, in search results, and in the schema markup.
+                </p>
+
+                {titleSaved && <div className="msg msg-success">Title saved.</div>}
+
+                {titleOptions.map((opt, i) => {
+                  const isChosen = episode.title === opt;
+                  return (
+                    <div
+                      key={i}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        justifyContent: 'space-between',
+                        gap: 14,
+                        padding: '11px 0',
+                        borderBottom: '1px solid rgba(255,255,255,.05)',
+                      }}
+                    >
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 14.5, color: isChosen ? '#F0B429' : '#d8d8d8' }}>
+                          {isChosen ? 'SELECTED  ' : ''}{opt}
+                        </div>
+                        <div className="dim" style={{ fontSize: 11.5, marginTop: 3 }}>
+                          {opt.length} characters
+                          {opt.length > 120 ? '  (over 120)' : ''}
+                        </div>
+                      </div>
+                      <button
+                        className="btn btn-ghost"
+                        style={{ padding: '6px 14px', fontSize: 11.5, flexShrink: 0 }}
+                        onClick={() => saveTitle(opt)}
+                        disabled={savingTitle}
+                      >
+                        {isChosen ? 'Current' : 'Use'}
+                      </button>
+                    </div>
+                  );
+                })}
+
+                <div className="field" style={{ marginTop: 20, marginBottom: 12 }}>
+                  <label htmlFor="ct">Or write your own</label>
+                  <input
+                    id="ct"
+                    type="text"
+                    value={customTitle}
+                    onChange={(e) => setCustomTitle(e.target.value)}
+                    placeholder="Custom title"
+                  />
+                  <div className="dim" style={{ fontSize: 11.5, marginTop: 4 }}>
+                    {customTitle.length} characters
+                  </div>
+                </div>
+
+                <button
+                  className="btn"
+                  onClick={() => saveTitle(customTitle)}
+                  disabled={savingTitle || customTitle.trim().length === 0}
+                >
+                  {savingTitle ? 'Saving...' : 'Use Custom Title'}
+                </button>
+              </div>
+            )}
 
             <div className="card" style={{ marginBottom: 20 }}>
               <div className="eyebrow">Assemble</div>
