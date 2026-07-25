@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase-browser';
 
@@ -45,13 +46,9 @@ export default function Nav() {
 
       <div className="nav">
         {TABS.map((tab) => (
-          
-            key={tab.href}
-            href={tab.href}
-            className={pathname === tab.href ? 'active' : ''}
-          >
+          <Link key={tab.href} href={tab.href} className={pathname === tab.href ? 'active' : ''}>
             {tab.label}
-          </a>
+          </Link>
         ))}
       </div>
     </>
