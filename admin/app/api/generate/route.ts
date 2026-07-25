@@ -1,5 +1,4 @@
 export const runtime = 'nodejs';
-export const maxDuration = 300;
 
 import { createAdminClient } from '@/lib/supabase-server';
 import { getAnthropic, fillTemplate } from '@/lib/anthropic';
@@ -52,13 +51,44 @@ export async function POST(req: Request) {
     );
   }
 
+  // Base variables from the episode record
   const vars: Record<string, string> = {
     guest_name: episode.guest_name || '',
     guest_company: episode.guest_company || '',
+    guest_email: episode.guest_email || '',
     episode_number: String(episode.episode_number),
-    transcript: episode.transcript,
     title: episode.title || '',
+    release_date: episode.release_date || '',
+    site_url: episode.site_url || '',
+    transcript: episode.transcript,
   };
+
+  // Global settings, available as {{setting_key}}
+  const { data: settings } = await supabase
+    .from('settings')
+    .select('key, value');
+
+  if (settings) {
+    for (const s of settings) {
+      if (s.value) vars[s.key] = s.value;
+    }
+  }
+
+  // Previously generated assets, available as {{asset_type}}.
+  // This is what lets later passes avoid repeating earlier ones.
+  const { data: priorAssets } = await supabase
+    .from('episode_assets')
+    .select('asset_type, content')
+    .eq('episode_id', episodeId)
+    .eq('is_current', true);
+
+  if (priorAssets) {
+    for (const a of priorAssets) {
+      if (a.content && a.asset_type !== assetType) {
+        vars[a.asset_type] = a.content;
+      }
+    }
+  }
 
   const userContent = fillTemplate(prompt.user_template, vars);
   const systemContent = fillTemplate(prompt.system_prompt, vars);
@@ -96,7 +126,6 @@ export async function POST(req: Request) {
         inputTokens = finalMsg.usage.input_tokens;
         outputTokens = finalMsg.usage.output_tokens;
 
-        // Retire any previous current version of this asset
         await supabase
           .from('episode_assets')
           .update({ is_current: false })
@@ -112,8 +141,7 @@ export async function POST(req: Request) {
           .order('version', { ascending: false })
           .limit(1);
 
-        const nextVersion =
-          prev && prev.length > 0 ? prev[0].version + 1 : 1;
+        const nextVersion = prev && prev.length > 0 ? prev[0].version + 1 : 1;
 
         await supabase.from('episode_assets').insert({
           episode_id: episodeId,
