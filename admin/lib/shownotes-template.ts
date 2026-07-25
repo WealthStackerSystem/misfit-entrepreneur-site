@@ -29,6 +29,7 @@ export type ShowNotesData = {
 
 export type EpisodeInfo = {
   episode_number: number;
+  title: string | null;
   guest_name: string | null;
   guest_company: string | null;
   release_date: string | null;
@@ -56,9 +57,20 @@ function fmtDate(d: string | null): string {
   if (!d) return '';
   const parts = d.split('-');
   if (parts.length !== 3) return d;
-  const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const months = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December',
+  ];
   const m = months[parseInt(parts[1], 10) - 1] || '';
   return m + ' ' + parseInt(parts[2], 10) + ', ' + parts[0];
+}
+
+function endPunct(s: string): string {
+  const t = s.trim();
+  if (t.length === 0) return t;
+  const last = t.charAt(t.length - 1);
+  if (last === '.' || last === '!' || last === '?' || last === ':') return t;
+  return t + '.';
 }
 
 const CSS = `
@@ -106,7 +118,7 @@ p{margin-bottom:16px;}
 .bigquote{text-align:center;max-width:660px;margin:0 auto;}
 .bigquote .mark{font-family:'Playfair Display',serif;font-size:76px;color:rgba(245,196,0,.3);line-height:.6;}
 .bigquote p{font-family:'Playfair Display',serif;font-style:italic;font-size:24px;color:#fff;line-height:1.5;margin:14px 0 18px;}
-.bigquote cite{font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#F5C400;font-style:normal;}
+.bq-attr{font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#F5C400;font-style:normal;}
 .m3-intro{color:#5a5348;font-size:14.5px;margin-bottom:28px;}
 .m3-grid{display:grid;gap:14px;}
 .m3-card{background:#fff;border:1px solid rgba(0,0,0,.07);border-left:4px solid #F5C400;border-radius:0 8px 8px 0;padding:24px 28px;display:grid;grid-template-columns:auto 1fr;gap:24px;align-items:start;}
@@ -114,11 +126,12 @@ p{margin-bottom:16px;}
 .m3-card h4{font-size:16px;font-weight:700;color:#1a1712;margin-bottom:7px;}
 .m3-card p{font-size:14.5px;color:#55503f;margin:0;line-height:1.7;}
 .takeaways{counter-reset:t;}
-.takeaways li{list-style:none;counter-increment:t;position:relative;padding-left:46px;margin-bottom:18px;font-size:14.5px;color:#b5b5b5;}
+.takeaways li{list-style:none;counter-increment:t;position:relative;padding-left:46px;margin-bottom:20px;font-size:14.5px;color:#b5b5b5;}
 .takeaways li::before{content:counter(t);position:absolute;left:0;top:0;width:30px;height:30px;background:rgba(245,196,0,.1);border:1px solid rgba(245,196,0,.35);border-radius:50%;color:#F5C400;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;}
-.takeaways li strong{color:#e8e8e8;}
+.tk-head{display:block;color:#e8e8e8;font-weight:700;margin-bottom:5px;}
 .share-row{display:flex;gap:10px;flex-wrap:wrap;}
-.share-btn{border:1px solid rgba(245,196,0,.3);color:#F5C400;padding:10px 20px;border-radius:4px;font-size:12px;font-weight:600;letter-spacing:1px;}
+.share-btn{border:1px solid rgba(245,196,0,.3);color:#F5C400;padding:10px 20px;border-radius:4px;font-size:12px;font-weight:600;letter-spacing:1px;background:transparent;cursor:pointer;font-family:'Inter',sans-serif;}
+.share-btn:hover{background:rgba(245,196,0,.08);text-decoration:none;}
 .sponsor{background:rgba(255,255,255,.03);border:1px solid rgba(245,196,0,.22);border-radius:8px;padding:26px 30px;margin-bottom:14px;}
 .sponsor-label{display:inline-block;font-size:9px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:#0e0e0e;background:#F5C400;padding:4px 10px;border-radius:3px;margin-bottom:12px;}
 .sponsor h4{font-size:17px;font-weight:700;color:#fff;margin-bottom:8px;}
@@ -137,12 +150,32 @@ export function buildShowNotesHtml(
   sponsors: SponsorInfo[],
   transcript: string
 ): string {
-  const title = data.recommended_title || 'Untitled Episode';
+  // Chosen title on the episode record wins over the model's recommendation
+  const title = ep.title || data.recommended_title || 'Untitled Episode';
   const num = ep.episode_number;
   const guest = ep.guest_name || '';
   const company = ep.guest_company || '';
   const sections = data.sections || [];
   const links = ep.guest_links || {};
+  const firstName = guest.split(' ')[0] || '';
+  const possessive = firstName.length > 0 ? firstName + "'s" : 'Their';
+
+  const pageUrl =
+    'https://misfitentrepreneur.com/episodes/ep-' + num + '-episode.html';
+
+  // Share text: the best quote if it fits, otherwise the title
+  const quote = data.best_quote || '';
+  const shareText =
+    quote.length > 0 && quote.length < 180 ? quote : title;
+
+  const encUrl = encodeURIComponent(pageUrl);
+  const encText = encodeURIComponent(shareText);
+  const xShare =
+    'https://twitter.com/intent/tweet?text=' + encText + '&url=' + encUrl;
+  const liShare =
+    'https://www.linkedin.com/sharing/share-offsite/?url=' + encUrl;
+  const fbShare =
+    'https://www.facebook.com/sharer/sharer.php?u=' + encUrl;
 
   const player = ep.libsyn_player_embed
     ? ep.libsyn_player_embed
@@ -151,19 +184,21 @@ export function buildShowNotesHtml(
       '</strong>Player appears here automatically on release.</div>';
 
   const tldrHtml = (data.tldr || [])
-    .map((t) => '<li>' + t + '</li>')
+    .map((t) => '      <li>' + t + '</li>')
     .join('\n');
 
   const sectionsHtml = sections
     .map((s, i) => {
       const n = String(i + 1).padStart(2, '0');
-      const bullets = (s.bullets || []).map((b) => '<li>' + b + '</li>').join('\n');
+      const bullets = (s.bullets || [])
+        .map((b) => '        <li>' + b + '</li>')
+        .join('\n');
       return (
-        '<div class="qa">\n' +
-        '<div class="qa-label">' + n + ' &middot; ' + esc(s.slot) + '</div>\n' +
-        '<div class="q">' + esc(s.question) + '</div>\n' +
-        '<ul>\n' + bullets + '\n</ul>\n' +
-        '</div>'
+        '    <div class="qa">\n' +
+        '      <div class="qa-label">' + n + ' &middot; ' + esc(s.slot) + '</div>\n' +
+        '      <div class="q">' + esc(s.question) + '</div>\n' +
+        '      <ul>\n' + bullets + '\n      </ul>\n' +
+        '    </div>'
       );
     })
     .join('\n');
@@ -172,28 +207,36 @@ export function buildShowNotesHtml(
     .map((m, i) => {
       const n = String(i + 1).padStart(2, '0');
       return (
-        '<div class="m3-card"><div class="m3-num">' + n + '</div><div>' +
+        '      <div class="m3-card"><div class="m3-num">' + n + '</div><div>' +
         '<h4>' + esc(m.title) + '</h4><p>' + m.body + '</p></div></div>'
       );
     })
     .join('\n');
 
   const takeawaysHtml = (data.takeaways || [])
-    .map((t) => '<li><strong>' + esc(t.headline) + '</strong> ' + t.body + '</li>')
+    .map(
+      (t) =>
+        '      <li><span class="tk-head">' +
+        esc(endPunct(t.headline)) +
+        '</span>' +
+        t.body +
+        '</li>'
+    )
     .join('\n');
 
   const sponsorHtml = sponsors
-    .map(
-      (s) =>
-        '<div class="sponsor"><div class="sponsor-label">' +
+    .map((s) => {
+      const link = s.offer_url || s.url || '';
+      const linkHtml = link
+        ? '<a href="' + esc(link) + '">Learn more &rarr;</a>'
+        : '';
+      return (
+        '    <div class="sponsor"><div class="sponsor-label">' +
         esc(s.tier || 'Sponsor') +
         '</div><h4>' + esc(s.name) + '</h4><p>' +
-        (s.shownotes_copy || '') + '</p>' +
-        (s.offer_url || s.url
-          ? '<a href="' + esc(s.offer_url || s.url || '') + '">Learn more &rarr;</a>'
-          : '') +
-        '</div>'
-    )
+        (s.shownotes_copy || '') + '</p>' + linkHtml + '</div>'
+      );
+    })
     .join('\n');
 
   const guestLinksHtml = [
@@ -201,7 +244,16 @@ export function buildShowNotesHtml(
     links.linkedin ? '<a href="' + esc(links.linkedin) + '">LinkedIn</a>' : '',
   ]
     .filter((x) => x.length > 0)
-    .join('\n');
+    .join('\n        ');
+
+  const sponsorSection =
+    sponsors.length > 0
+      ? '<section class="band-gold">\n  <div class="wrap">\n' +
+        '    <div class="eyebrow">Supported By</div>\n' +
+        '    <h2>This Week\'s Sponsors</h2>\n' +
+        sponsorHtml +
+        '\n  </div>\n</section>'
+      : '';
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -210,6 +262,12 @@ export function buildShowNotesHtml(
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>${esc(title)} | Misfit Entrepreneur</title>
 <meta name="description" content="${esc(data.meta_description || '')}">
+<link rel="canonical" href="${esc(pageUrl)}">
+<meta property="og:type" content="article">
+<meta property="og:title" content="${esc(title)}">
+<meta property="og:description" content="${esc(data.meta_description || '')}">
+<meta property="og:url" content="${esc(pageUrl)}">
+<meta name="twitter:card" content="summary_large_image">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@300;400;600;700&family=Playfair+Display:ital,wght@0,600;1,500&display=swap" rel="stylesheet">
 <style>${CSS}</style>
 </head>
@@ -244,7 +302,9 @@ ${tldrHtml}
     <div class="guest-card">
       <h3>${esc(guest)}</h3>
       <p>${data.guest_bio || ''}</p>
-      <div class="guest-links">${guestLinksHtml}</div>
+      <div class="guest-links">
+        ${guestLinksHtml}
+      </div>
     </div>
   </div>
 </section>
@@ -261,8 +321,8 @@ ${sectionsHtml}
   <div class="wrap">
     <div class="bigquote">
       <div class="mark">&ldquo;</div>
-      <p>${esc(data.best_quote || '')}</p>
-      ${esc(guest)}
+      <p>${esc(quote)}</p>
+      <div class="bq-attr">${esc(guest)}</div>
     </div>
   </div>
 </section>
@@ -270,8 +330,8 @@ ${sectionsHtml}
 <section class="band-light">
   <div class="wrap">
     <div class="eyebrow">The Misfit 3&trade;</div>
-    <h2>${esc(guest.split(' ')[0] || 'Their')}'s Three</h2>
-    <p class="m3-intro">The three things they would leave behind for the generations that come after them.</p>
+    <h2>${esc(possessive)} Three</h2>
+    <p class="m3-intro">The three things ${esc(firstName || 'they')} would leave behind for the generations that come after.</p>
     <div class="m3-grid">
 ${m3Html}
     </div>
@@ -294,20 +354,15 @@ ${takeawaysHtml}
     <h2>Share This Episode</h2>
     <p style="color:#888;font-size:14px;">One great episode can change someone's life. If something here landed, send it to one entrepreneur who needs it this week.</p>
     <div class="share-row">
-      <a href="#" class="share-btn">Share on X</a>
-      <a href="#" class="share-btn">Share on LinkedIn</a>
-      <a href="#" class="share-btn">Copy Link</a>
+      <a href="${esc(xShare)}" class="share-btn" target="_blank" rel="noopener">Share on X</a>
+      <a href="${esc(liShare)}" class="share-btn" target="_blank" rel="noopener">Share on LinkedIn</a>
+      <a href="${esc(fbShare)}" class="share-btn" target="_blank" rel="noopener">Share on Facebook</a>
+      <button class="share-btn" id="copyLinkBtn">Copy Link</button>
     </div>
   </div>
 </section>
 
-${sponsors.length > 0 ? `<section class="band-gold">
-  <div class="wrap">
-    <div class="eyebrow">Supported By</div>
-    <h2>This Week's Sponsors</h2>
-${sponsorHtml}
-  </div>
-</section>` : ''}
+${sponsorSection}
 
 <section class="band-dark">
   <div class="wrap">
@@ -323,11 +378,28 @@ ${sponsorHtml}
   <div class="wrap">&copy; The Misfit Entrepreneur &middot; <a href="https://misfitentrepreneur.com">misfitentrepreneur.com</a></div>
 </footer>
 
+<script>
+(function () {
+  var btn = document.getElementById('copyLinkBtn');
+  if (!btn) return;
+  btn.addEventListener('click', function () {
+    var url = ${JSON.stringify(pageUrl)};
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(function () {
+        var original = btn.textContent;
+        btn.textContent = 'Copied';
+        setTimeout(function () { btn.textContent = original; }, 1800);
+      });
+    }
+  });
+})();
+</script>
+
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
   "@type": "PodcastEpisode",
-  "url": "https://misfitentrepreneur.com/episodes/ep-${num}-episode.html",
+  "url": ${JSON.stringify(pageUrl)},
   "name": ${JSON.stringify(title)},
   "episodeNumber": ${num},
   "datePublished": ${JSON.stringify(ep.release_date || '')},
