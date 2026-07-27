@@ -53,6 +53,7 @@ export default function SponsorsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<Omit<Sponsor, 'id'>>(EMPTY);
   const [showForm, setShowForm] = useState<boolean>(false);
+  const [uploading, setUploading] = useState<boolean>(false);
 
   async function load() {
     const supabase = createClient();
@@ -90,6 +91,53 @@ export default function SponsorsPage() {
     setEditingId(id);
     setShowForm(true);
     setError(null);
+  }
+
+  async function uploadLogo(file: File) {
+    if (!form.name.trim()) {
+      setError('Enter the sponsor name first. It becomes the filename.');
+      return;
+    }
+
+    setUploading(true);
+    setError(null);
+
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = String(reader.result || '');
+          const comma = result.indexOf(',');
+          resolve(comma === -1 ? result : result.slice(comma + 1));
+        };
+        reader.onerror = () => reject(new Error('Could not read the file'));
+        reader.readAsDataURL(file);
+      });
+
+      const res = await fetch('/api/upload-logo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: form.name,
+          mimeType: file.type,
+          data: base64,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!data.ok) {
+        setError(data.error || 'Upload failed');
+        setUploading(false);
+        return;
+      }
+
+      setField('logo_url', data.url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Upload failed');
+    }
+
+    setUploading(false);
   }
 
   async function save() {
@@ -290,13 +338,66 @@ export default function SponsorsPage() {
             </div>
 
             <div className="field">
-              <label htmlFor="logo_url">Logo URL</label>
+              <label htmlFor="logo_file">Logo</label>
+
+              {form.logo_url ? (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 14,
+                    background: '#101010',
+                    border: '1px solid rgba(255,255,255,.08)',
+                    borderRadius: 5,
+                    padding: 12,
+                    marginBottom: 10,
+                  }}
+                >
+                  <img
+                    src={form.logo_url}
+                    alt=""
+                    style={{
+                      height: 44,
+                      width: 'auto',
+                      maxWidth: 140,
+                      objectFit: 'contain',
+                      background: '#fff',
+                      borderRadius: 3,
+                      padding: 4,
+                    }}
+                  />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="dim" style={{ fontSize: 11.5, wordBreak: 'break-all' }}>
+                      {form.logo_url}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    style={{ padding: '6px 12px', fontSize: 11.5 }}
+                    onClick={() => setField('logo_url', '')}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ) : null}
+
               <input
-                id="logo_url"
-                type="text"
-                value={form.logo_url ?? ''}
-                onChange={(e) => setField('logo_url', e.target.value)}
+                id="logo_file"
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/svg+xml"
+                disabled={uploading}
+                onChange={(e) => {
+                  const f = e.target.files && e.target.files[0];
+                  if (f) uploadLogo(f);
+                  e.target.value = '';
+                }}
               />
+              <p className="dim" style={{ fontSize: 12, marginTop: 6 }}>
+                {uploading
+                  ? 'Uploading...'
+                  : 'JPG, PNG, WEBP or SVG under 2MB. Saved to the site and served from misfitentrepreneur.com.'}
+              </p>
             </div>
 
             <div className="field">
