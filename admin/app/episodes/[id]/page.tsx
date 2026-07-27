@@ -14,6 +14,7 @@ import {
 } from '@/lib/youtube-template';
 import { stripFences } from '@/lib/anthropic';
 import Nav from '../../components/Nav';
+import AssetViewer from '../../components/AssetViewer';
 
 type Episode = {
   id: string;
@@ -1125,28 +1126,7 @@ export default function EpisodeDetailPage() {
               </div>
             )}
 
-            {assets.length > 0 && (
-              <div className="card">
-                <div className="eyebrow">Saved Assets</div>
-                {assets.map((a) => (
-                  <div
-                    key={a.asset_type}
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      padding: '10px 0',
-                      borderBottom: '1px solid rgba(255,255,255,.06)',
-                      fontSize: 14,
-                    }}
-                  >
-                    <span>{a.asset_type}</span>
-                    <span className="dim" style={{ fontSize: 12.5 }}>
-                      v{a.version} | {(a.content || '').length.toLocaleString()} chars
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
+            <AssetViewer episodeId={id} />
           </>
         )}
       </div>
