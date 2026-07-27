@@ -22,33 +22,33 @@ type TagResult = {
   key_theme: string;
 };
 
-const SYSTEM_PROMPT = `You are cataloguing the back archive of The Misfit Entrepreneur, a podcast hosted by Dave Lukas featuring interviews with entrepreneurs.
+// Netlify functions are killed at roughly 26 seconds. This call does not
+// stream, so nothing returns until the whole batch is written. Keep the
+// batch small enough that a slow response still lands in time.
+const DEFAULT_BATCH = 8;
+const MAX_BATCH = 12;
 
-For each episode you are given the number, the title, and sometimes a quote from the episode. Return structured metadata.
+const SYSTEM_PROMPT = `You catalogue the archive of The Misfit Entrepreneur, a podcast hosted by Dave Lukas featuring interviews with entrepreneurs.
 
-FOR EACH EPISODE RETURN:
+For each episode you get a number, a title, and sometimes a quote. Return metadata.
 
 guest_name
-  The guest's full name if it appears in the title. Titles often read "... with Jane Doe" or "... how Jane Doe built X". Extract the PERSON, never a company name. Dave Lukas is the host, never the guest - if the episode is a solo episode by Dave, return null. If no person is identifiable, return null.
+  The guest's full name if it appears in the title. Titles read like "... with Jane Doe" or "... how Jane Doe built X". Extract the PERSON, never a company. Dave Lukas is the host and is never the guest. Solo episodes return null. No identifiable person returns null.
 
 topics
-  4 to 7 lowercase topic tags. Use short noun phrases someone would search for. Prefer consistent, reusable tags across episodes over clever one-offs. Good: "sales", "hiring", "mindset", "acquisitions", "real estate", "personal branding", "scaling". Bad: "the power of belief", "an amazing journey".
+  4 to 6 lowercase tags. Short noun phrases someone would search for. Reuse the same tags across episodes rather than inventing new ones. Good: "sales", "hiring", "mindset", "acquisitions", "real estate", "scaling". Bad: "the power of belief", "an amazing journey".
 
 evergreen_score
-  Integer 1 to 5. How well does this episode hold up years later, independent of when it aired?
-  5 = timeless principles, still fully relevant
-  4 = mostly timeless, minor dating
-  3 = useful but somewhat tied to its moment
-  2 = noticeably dated
-  1 = tied to a specific event, product, or news cycle
-  Episodes about mindset, sales, leadership, and fundamentals score high. Episodes about a specific platform, tool, current event, or year-in-review score low.
+  Integer 1 to 5. How well does this hold up years later?
+  5 timeless principles, 4 mostly timeless, 3 somewhat tied to its moment, 2 noticeably dated, 1 tied to a specific event or news cycle.
+  Mindset, sales, leadership and fundamentals score high. A specific platform, tool, current event or year-in-review scores low.
 
 key_theme
-  One short sentence, under 90 characters, naming what the episode is actually about. Written plainly, no hype.
+  One sentence under 90 characters naming what the episode is actually about. Plain, no hype.
 
-Return ONLY a valid JSON array, one object per episode, in the same order given. No markdown fences, no preamble.
+Return ONLY a valid JSON array, one object per episode, same order given. No markdown fences, no preamble. Be terse.
 
-[{"episode_number": 123, "guest_name": "...", "topics": ["..."], "evergreen_score": 4, "key_theme": "..."}]`;
+[{"episode_number":123,"guest_name":"...","topics":["..."],"evergreen_score":4,"key_theme":"..."}]`;
 
 export async function POST(req: Request) {
   let body: Body = {};
@@ -58,10 +58,9 @@ export async function POST(req: Request) {
     // empty body is fine
   }
 
-  const batchSize = Math.min(Math.max(body.batchSize || 25, 1), 40);
+  const batchSize = Math.min(Math.max(body.batchSize || DEFAULT_BATCH, 1), MAX_BATCH);
   const supabase = createAdminClient();
 
-  // Grab episodes that have not been tagged yet
   const { data: rows, error: selErr } = await supabase
     .from('episodes')
     .select('id, episode_number, title, best_quote')
@@ -75,16 +74,11 @@ export async function POST(req: Request) {
   }
 
   if (!rows || rows.length === 0) {
-    const { count } = await supabase
-      .from('episodes')
-      .select('*', { count: 'exact', head: true });
-
     return Response.json({
       ok: true,
       done: true,
       tagged: 0,
       remaining: 0,
-      total: count ?? 0,
       message: 'All episodes are tagged.',
     });
   }
@@ -93,7 +87,7 @@ export async function POST(req: Request) {
 
   const listing = episodes
     .map((e) => {
-      const q = e.best_quote ? '\n   quote: ' + e.best_quote.slice(0, 220) : '';
+      const q = e.best_quote ? '\n   quote: ' + e.best_quote.slice(0, 160) : '';
       return e.episode_number + '. ' + (e.title || '') + q;
     })
     .join('\n');
@@ -104,7 +98,7 @@ export async function POST(req: Request) {
     const anthropic = getAnthropic();
     const msg = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 8000,
+      max_tokens: 2000,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: 'EPISODES:\n\n' + listing }],
     });
@@ -126,7 +120,7 @@ export async function POST(req: Request) {
     );
   }
 
-  // Map results back by episode number so order drift cannot corrupt data
+  // Match results back by episode number so order drift cannot corrupt data
   const byNumber = new Map<number, TagResult>();
   for (const r of parsed) {
     if (typeof r.episode_number === 'number') {
@@ -146,7 +140,9 @@ export async function POST(req: Request) {
     }
 
     const score =
-      typeof r.evergreen_score === 'number' && r.evergreen_score >= 1 && r.evergreen_score <= 5
+      typeof r.evergreen_score === 'number' &&
+      r.evergreen_score >= 1 &&
+      r.evergreen_score <= 5
         ? Math.round(r.evergreen_score)
         : 3;
 
@@ -168,7 +164,6 @@ export async function POST(req: Request) {
       key_theme: theme,
     };
 
-    // Only set guest_name if we do not already have one
     if (r.guest_name && typeof r.guest_name === 'string' && r.guest_name.trim().length > 0) {
       const g = r.guest_name.trim();
       if (g.toLowerCase() !== 'dave lukas' && g.toLowerCase() !== 'null') {
