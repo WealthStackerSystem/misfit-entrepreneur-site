@@ -310,6 +310,9 @@ export default function EpisodeDetailPage() {
       for (const r of rows) {
         if (!r.content) continue;
         if (r.asset_type.indexOf('show_notes_') !== 0) continue;
+        // show_notes_html is the assembled page saved at publish time,
+        // not JSON, so it must never reach the merge.
+        if (r.asset_type === 'show_notes_html') continue;
 
         let parsed: Record<string, unknown>;
         try {
@@ -939,6 +942,12 @@ export default function EpisodeDetailPage() {
               <p className="muted" style={{ fontSize: 14, marginBottom: 16 }}>
                 Merges the four generated pieces into the finished page.
               </p>
+              {error !== null && (
+                <div className="msg msg-error" style={{ marginBottom: 14 }}>
+                  {error}
+                </div>
+              )}
+
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                 <button className="btn" onClick={buildPreview} disabled={busy}>
                   {building ? 'Building...' : 'Build Preview'}
