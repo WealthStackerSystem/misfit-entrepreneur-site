@@ -15,6 +15,7 @@ import {
 import { stripFences } from '@/lib/anthropic';
 import Nav from '../../components/Nav';
 import AssetViewer from '../../components/AssetViewer';
+import { buildMinuteHtml, type MinuteParts } from '@/lib/misfit-minute-template';
 
 type Episode = {
   id: string;
@@ -87,6 +88,12 @@ export default function EpisodeDetailPage() {
   const [picks, setPicks] = useState<Pick[]>([]);
   const [savingSponsors, setSavingSponsors] = useState(false);
   const [sponsorsSaved, setSponsorsSaved] = useState(false);
+
+  const [minuteHtml, setMinuteHtml] = useState<string | null>(null);
+  const [minuteSubjects, setMinuteSubjects] = useState<string[]>([]);
+  const [minutePreview, setMinutePreview] = useState<string | null>(null);
+  const [genMinute, setGenMinute] = useState(false);
+  const [buildingMinute, setBuildingMinute] = useState(false);
 
   const [ytText, setYtText] = useState<string | null>(null);
   const [ytNote, setYtNote] = useState<string | null>(null);
@@ -621,6 +628,158 @@ export default function EpisodeDetailPage() {
     setPreviewHtml(null);
   }
 
+  async function generateMinute() {
+    setGenMinute(true);
+    setError(null);
+    setMinuteHtml(null);
+
+    try {
+      const res = await fetch('/api/newsletter', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ episodeId: id }),
+      });
+
+      const raw = await res.text();
+      let data: Record<string, unknown>;
+      try {
+        data = JSON.parse(raw);
+      } catch {
+        setError('Newsletter generation timed out. Try again.');
+        setGenMinute(false);
+        return;
+      }
+
+      if (!data.ok) {
+        setError(String(data.error || 'Newsletter generation failed'));
+        setGenMinute(false);
+        return;
+      }
+
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Request failed');
+    }
+
+    setGenMinute(false);
+  }
+
+  async function buildMinute() {
+    setBuildingMinute(true);
+    setError(null);
+
+    try {
+      const supabase = createClient();
+
+      const { data: rows } = await supabase
+        .from('episode_assets')
+        .select('asset_type, content')
+        .eq('episode_id', id)
+        .eq('is_current', true);
+
+      const asset = rows?.find((r) => r.asset_type === 'newsletter_parts');
+
+      if (!asset || !asset.content) {
+        setError('Generate the newsletter copy first.');
+        setBuildingMinute(false);
+        return;
+      }
+
+      let parts: MinuteParts;
+      try {
+        parts = JSON.parse(stripFences(asset.content));
+      } catch {
+        setError('Could not parse the newsletter output. Regenerate it.');
+        setBuildingMinute(false);
+        return;
+      }
+
+      const { data: ep } = await supabase
+        .from('episodes')
+        .select('episode_number, title, guest_name, guest_company')
+        .eq('id', id)
+        .single();
+
+      if (!ep) {
+        setError('Could not load episode data.');
+        setBuildingMinute(false);
+        return;
+      }
+
+      const { data: settingsRows } = await supabase
+        .from('settings')
+        .select('key, value');
+
+      const s: Record<string, string> = {};
+      if (settingsRows) {
+        for (const row of settingsRows) {
+          if (row.value) s[row.key] = row.value;
+        }
+      }
+
+      // Newsletter-slot sponsors for this episode, all active as fallback
+      let newsSponsors: {
+        name: string;
+        newsletter_copy: string | null;
+        shownotes_copy: string | null;
+        offer_url: string | null;
+        url: string | null;
+        logo_url: string | null;
+      }[] = [];
+
+      const { data: pickedRows } = await supabase
+        .from('episode_sponsors')
+        .select('slot, sponsors(name, newsletter_copy, shownotes_copy, offer_url, url, logo_url)')
+        .eq('episode_id', id)
+        .eq('slot', 'newsletter');
+
+      if (pickedRows && pickedRows.length > 0) {
+        for (const row of pickedRows as unknown as {
+          sponsors: (typeof newsSponsors)[number] | null;
+        }[]) {
+          if (row.sponsors) newsSponsors.push(row.sponsors);
+        }
+      }
+
+      if (newsSponsors.length === 0) {
+        const { data: sp } = await supabase
+          .from('sponsors')
+          .select('name, newsletter_copy, shownotes_copy, offer_url, url, logo_url')
+          .eq('active', true);
+        newsSponsors = (sp as typeof newsSponsors) || [];
+      }
+
+      const epRecord = ep as Record<string, unknown>;
+
+      const html = buildMinuteHtml(
+        parts,
+        {
+          episode_number: epRecord.episode_number as number,
+          title: (epRecord.title as string) || null,
+          guest_name: (epRecord.guest_name as string) || null,
+          guest_company: (epRecord.guest_company as string) || null,
+        },
+        newsSponsors,
+        s.newsletter_volume || '11',
+        s.newsletter_issue || '1'
+      );
+
+      setMinuteHtml(html);
+      setMinuteSubjects(
+        Array.isArray(parts.subject_options) ? parts.subject_options : []
+      );
+      setMinutePreview(parts.preview_text || null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Build failed');
+    }
+
+    setBuildingMinute(false);
+  }
+
+  function copyMinute() {
+    if (minuteHtml) navigator.clipboard.writeText(minuteHtml);
+  }
+
   async function buildYouTube() {
     setBuildingYt(true);
     setError(null);
@@ -729,7 +888,14 @@ export default function EpisodeDetailPage() {
   }
 
   const busy =
-    running || building || buildingEmail || publishing || buildingYt || savingSponsors;
+    running ||
+    building ||
+    buildingEmail ||
+    publishing ||
+    buildingYt ||
+    savingSponsors ||
+    genMinute ||
+    buildingMinute;
 
   return (
     <div className="shell">
@@ -1123,6 +1289,81 @@ export default function EpisodeDetailPage() {
                 >
                   {output}
                 </pre>
+              </div>
+            )}
+
+            <div className="card" style={{ marginBottom: 20 }}>
+              <div className="eyebrow">Newsletter</div>
+              <h3 style={{ marginBottom: 8 }}>The Misfit Minute</h3>
+              <p className="muted" style={{ fontSize: 14, marginBottom: 16 }}>
+                Picks a From the Vault episode and a blog post automatically, favouring
+                whatever has waited longest, then writes the issue around this week's
+                episode.
+              </p>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <button
+                  className="btn btn-ghost"
+                  onClick={generateMinute}
+                  disabled={busy}
+                >
+                  {genMinute
+                    ? 'Writing...'
+                    : hasAsset('newsletter_parts')
+                    ? 'Regenerate Copy'
+                    : 'Generate Copy'}
+                </button>
+                <button className="btn" onClick={buildMinute} disabled={busy}>
+                  {buildingMinute ? 'Building...' : 'Build Newsletter'}
+                </button>
+                {minuteHtml !== null && (
+                  <button className="btn btn-ghost" onClick={copyMinute}>
+                    Copy HTML
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {minuteSubjects.length > 0 && (
+              <div className="card" style={{ marginBottom: 20 }}>
+                <div className="eyebrow">Subject Lines</div>
+                {minuteSubjects.map((s, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      padding: '9px 0',
+                      borderBottom: '1px solid rgba(255,255,255,.05)',
+                      fontSize: 14.5,
+                      color: '#d8d8d8',
+                    }}
+                  >
+                    {s}
+                    <span className="dim" style={{ fontSize: 11.5, marginLeft: 10 }}>
+                      {s.length}
+                    </span>
+                  </div>
+                ))}
+                {minutePreview !== null && (
+                  <p className="muted" style={{ fontSize: 13.5, marginTop: 14 }}>
+                    Preview text: {minutePreview}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {minuteHtml !== null && (
+              <div className="card" style={{ marginBottom: 20 }}>
+                <div className="eyebrow">Newsletter Preview</div>
+                <iframe
+                  srcDoc={minuteHtml}
+                  title="Misfit Minute preview"
+                  style={{
+                    width: '100%',
+                    height: 700,
+                    border: '1px solid rgba(255,255,255,.1)',
+                    borderRadius: 6,
+                    background: '#e8e8e8',
+                  }}
+                />
               </div>
             )}
 
