@@ -1,21 +1,20 @@
 #!/usr/bin/env python3
 """
-MISFIT ENTREPRENEUR - Live Blog Archive Scraper
-================================================
+MISFIT ENTREPRENEUR - Live Blog Archive Scraper (v2)
+=====================================================
 The original blog is still live on Weebly at www.misfitentrepreneur.com/blog/.
-The earlier scraper pulled from the Wayback Machine and its selectors did not
-match Weebly's markup, which is why the imported posts came out truncated.
 
-This version scrapes the live site instead.
+v1 found nothing and could not say why, because it swallowed HTTP status
+codes. v2 runs a diagnostic probe first and logs every status code, so a
+failure tells us exactly what is happening.
 
-  1. Read sitemap.xml to enumerate every blog post URL
-  2. Fall back to crawling /blog/archives/MM-YYYY pages if the sitemap is thin
+  0. Probe a few known URLs and report status, size, and a body snippet
+  1. Enumerate post URLs from sitemap.xml
+  2. Fall back to crawling /blog/archives/MM-YYYY across the full date range
   3. Fetch each post and extract title, date, and full body
   4. Write blog_archive.json
 
-Writes data only. Does not touch the existing /blog/*.html pages.
-
-Run via the "Scrape Live Blog Archive" workflow in the Actions tab.
+Data only. Does not touch the existing /blog/*.html pages.
 """
 
 import json
@@ -28,31 +27,92 @@ from urllib.parse import urljoin
 import requests
 from bs4 import BeautifulSoup
 
-BASE = "https://www.misfitentrepreneur.com"
-SITEMAP = BASE + "/sitemap.xml"
+HOSTS = [
+    "https://www.misfitentrepreneur.com",
+    "https://misfitentrepreneur.com",
+]
 OUT = "blog_archive.json"
 
+# Weebly and the CDN in front of it reject obvious bot agents.
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (compatible; MisfitArchiveBot/1.0)",
-    "Accept": "text/html,application/xhtml+xml,application/xml",
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Accept": (
+        "text/html,application/xhtml+xml,application/xml;q=0.9,"
+        "image/avif,image/webp,*/*;q=0.8"
+    ),
+    "Accept-Language": "en-US,en;q=0.9",
+    "Cache-Control": "no-cache",
 }
 
-# Paths under /blog/ that are listings, not posts
 NON_POST = ("archives", "category", "tag", "page", "author", "feed", "rss")
 
+SESSION = requests.Session()
+SESSION.headers.update(HEADERS)
 
-def get(url, tries=3):
+BASE = None  # resolved by the probe
+
+
+def fetch(url, tries=2, quiet=False):
+    """Return (status, text). status is None on a transport error."""
+    last_status = None
     for i in range(tries):
         try:
-            r = requests.get(url, headers=HEADERS, timeout=30)
+            r = SESSION.get(url, timeout=30, allow_redirects=True)
+            last_status = r.status_code
             if r.status_code == 200:
-                return r.text
+                return 200, r.text
             if r.status_code == 404:
-                return None
+                return 404, None
         except Exception as e:
-            print("    retry %d: %s" % (i + 1, e))
-        time.sleep(2)
-    return None
+            if not quiet:
+                print("    transport error: %s" % e)
+            last_status = None
+        if i + 1 < tries:
+            time.sleep(2)
+    return last_status, None
+
+
+def probe():
+    """Work out which host answers, and report exactly what we get back."""
+    global BASE
+
+    print("=" * 60)
+    print("DIAGNOSTIC PROBE")
+    print("=" * 60)
+
+    candidates = []
+    for host in HOSTS:
+        candidates.append((host, host + "/blog/archives/07-2020"))
+        candidates.append((host, host + "/sitemap.xml"))
+        candidates.append((host, host + "/blog"))
+
+    working_host = None
+
+    for host, url in candidates:
+        status, text = fetch(url, tries=1, quiet=True)
+        size = len(text) if text else 0
+        print("  %-6s %6s  %s" % (str(status), size, url))
+
+        if status == 200 and text:
+            snippet = re.sub(r"\s+", " ", text[:180])
+            print("         %s" % snippet)
+            if working_host is None:
+                working_host = host
+
+    print()
+
+    if working_host is None:
+        print("Nothing responded with 200. The site is blocking these requests")
+        print("or is unreachable from this runner.")
+        return False
+
+    BASE = working_host
+    print("Using host: %s" % BASE)
+    print()
+    return True
 
 
 def is_post_url(u):
@@ -61,40 +121,39 @@ def is_post_url(u):
     tail = u.split("/blog/", 1)[1].strip("/")
     if not tail or "?" in tail or "#" in tail:
         return False
-    first = tail.split("/")[0].lower()
-    if first in NON_POST:
+    if tail.split("/")[0].lower() in NON_POST:
         return False
     return True
 
 
 def urls_from_sitemap():
-    """Weebly publishes a sitemap. Follow index sitemaps one level."""
     found = set()
-    xml = get(SITEMAP)
+
+    status, xml = fetch(BASE + "/sitemap.xml")
+    print("  sitemap.xml -> %s" % status)
     if not xml:
-        print("  sitemap.xml not reachable")
         return found
 
     soup = BeautifulSoup(xml, "html.parser")
 
-    child_maps = [
+    child = [
         loc.get_text(strip=True)
         for sm in soup.find_all("sitemap")
         for loc in sm.find_all("loc")
     ]
 
-    if child_maps:
-        print("  sitemap index with %d child maps" % len(child_maps))
-        for cm in child_maps:
-            sub = get(cm)
+    if child:
+        print("  sitemap index, %d child maps" % len(child))
+        for cm in child:
+            st, sub = fetch(cm)
             if not sub:
+                print("    %s -> %s" % (cm, st))
                 continue
-            ssoup = BeautifulSoup(sub, "html.parser")
-            for loc in ssoup.find_all("loc"):
+            for loc in BeautifulSoup(sub, "html.parser").find_all("loc"):
                 u = loc.get_text(strip=True)
                 if is_post_url(u):
                     found.add(u)
-            time.sleep(0.4)
+            time.sleep(0.3)
     else:
         for loc in soup.find_all("loc"):
             u = loc.get_text(strip=True)
@@ -105,32 +164,34 @@ def urls_from_sitemap():
 
 
 def urls_from_archives():
-    """Fallback: walk every month page and collect post links."""
+    """Walk every month page. No early break - the whole range is cheap."""
     found = set()
-    months = []
+    hits = 0
+    misses = 0
+
     for year in range(2016, 2027):
         for month in range(1, 13):
-            months.append("%02d-%04d" % (month, year))
+            tag = "%02d-%04d" % (month, year)
+            status, page = fetch(BASE + "/blog/archives/" + tag, tries=1, quiet=True)
 
-    empty_streak = 0
-    for m in months:
-        page = get(BASE + "/blog/archives/" + m, tries=1)
-        if not page:
-            empty_streak += 1
-            if empty_streak > 30:
-                break
-            continue
-        empty_streak = 0
-        soup = BeautifulSoup(page, "html.parser")
-        before = len(found)
-        for a in soup.find_all("a", href=True):
-            u = urljoin(BASE, a["href"])
-            if u.startswith(BASE) and is_post_url(u):
-                found.add(u)
-        if len(found) > before:
-            print("    %s -> +%d" % (m, len(found) - before))
-        time.sleep(0.4)
+            if not page:
+                misses += 1
+                continue
 
+            hits += 1
+            before = len(found)
+            for a in BeautifulSoup(page, "html.parser").find_all("a", href=True):
+                u = urljoin(BASE, a["href"])
+                if u.startswith(BASE) and is_post_url(u):
+                    found.add(u)
+
+            gained = len(found) - before
+            if gained:
+                print("    %s -> +%d" % (tag, gained))
+
+            time.sleep(0.3)
+
+    print("  archive pages: %d responded, %d did not" % (hits, misses))
     return found
 
 
@@ -150,16 +211,14 @@ MONTHS = {
 
 
 def find_date(soup, raw):
-    for sel in [
-        {"class": re.compile(r"blog-date|post-date|date-text", re.I)},
-        {"class": re.compile(r"\bdate\b", re.I)},
-    ]:
-        for node in soup.find_all("div", attrs=sel) + soup.find_all("span", attrs=sel):
+    for tag in ["div", "span", "p"]:
+        for node in soup.find_all(
+            tag, attrs={"class": re.compile(r"date", re.I)}
+        ):
             m = DATE_RE.search(node.get_text(" ", strip=True))
             if m:
                 return "%04d-%02d-%02d" % (
-                    int(m.group(3)), MONTHS[m.group(1)], int(m.group(2))
-                )
+                    int(m.group(3)), MONTHS[m.group(1)], int(m.group(2)))
 
     t = soup.find("time")
     if t and t.get("datetime"):
@@ -168,8 +227,7 @@ def find_date(soup, raw):
     m = DATE_RE.search(raw)
     if m:
         return "%04d-%02d-%02d" % (
-            int(m.group(3)), MONTHS[m.group(1)], int(m.group(2))
-        )
+            int(m.group(3)), MONTHS[m.group(1)], int(m.group(2)))
     return None
 
 
@@ -192,7 +250,7 @@ def find_title(soup, url):
     return url.rstrip("/").split("/")[-1].replace("-", " ").title()
 
 
-JUNK_PAT = re.compile(
+JUNK = re.compile(
     r"blog-sidebar|blog-header|blog-date|blog-title|social|share|comment|"
     r"wsite-com|banner|nav|footer|header|archives|categories|rss",
     re.I,
@@ -200,7 +258,6 @@ JUNK_PAT = re.compile(
 
 
 def find_body(soup):
-    """Weebly wraps post text in .blog-content, with paragraphs inside."""
     container = None
     for sel in [
         "div.blog-content",
@@ -208,6 +265,7 @@ def find_body(soup):
         "div.post-content",
         "div.entry-content",
         "div.wsite-multicol",
+        "div#wsite-content",
     ]:
         node = soup.select_one(sel)
         if node:
@@ -215,38 +273,36 @@ def find_body(soup):
             break
 
     if container is None:
-        paras = soup.find_all("div", class_=re.compile(r"paragraph", re.I))
-        if paras:
-            html_parts = []
-            for p in paras:
-                txt = p.get_text(" ", strip=True)
-                if len(txt) > 40:
-                    html_parts.append(str(p))
-            return "\n".join(html_parts)
-        return ""
+        parts = []
+        for p in soup.find_all("div", class_=re.compile(r"paragraph", re.I)):
+            if len(p.get_text(" ", strip=True)) > 40:
+                parts.append(str(p))
+        return "\n".join(parts)
 
     for bad in container.find_all(
         ["script", "style", "form", "iframe", "nav", "footer"]
     ):
         bad.decompose()
-
-    for bad in container.find_all(attrs={"class": JUNK_PAT}):
+    for bad in container.find_all(attrs={"class": JUNK}):
         bad.decompose()
 
     return str(container)
 
 
 def main():
-    print("Enumerating blog post URLs")
+    if not probe():
+        sys.exit(1)
+
+    print("Enumerating post URLs")
     urls = urls_from_sitemap()
-    print("  sitemap found %d post URLs" % len(urls))
+    print("  from sitemap: %d" % len(urls))
 
     if len(urls) < 30:
-        print("  sitemap thin, crawling archive pages")
+        print("  crawling archive pages instead")
         urls |= urls_from_archives()
 
     urls = sorted(urls)
-    print("Total unique post URLs: %d\n" % len(urls))
+    print("\nTotal unique post URLs: %d\n" % len(urls))
 
     if not urls:
         print("No post URLs found. Aborting without writing.")
@@ -259,13 +315,13 @@ def main():
         slug = url.rstrip("/").split("/")[-1]
         print("[%d/%d] %s" % (i, len(urls), slug))
 
-        raw = get(url)
+        status, raw = fetch(url)
         if not raw:
+            print("    status %s" % status)
             failures.append(slug)
             continue
 
         soup = BeautifulSoup(raw, "html.parser")
-
         title = find_title(soup, url)
         date = find_date(soup, raw)
         body_html = find_body(soup)
@@ -274,7 +330,7 @@ def main():
         words = len(plain.split()) if plain else 0
 
         if words < 40:
-            print("    thin (%d words), skipping" % words)
+            print("    thin (%d words), skipped" % words)
             failures.append(slug)
             continue
 
@@ -288,7 +344,7 @@ def main():
             "word_count": words,
         })
 
-        time.sleep(0.5)
+        time.sleep(0.4)
 
     posts.sort(key=lambda p: p["date"] or "0000-00-00")
 
@@ -298,15 +354,15 @@ def main():
     wc = [p["word_count"] for p in posts] or [0]
     dated = sum(1 for p in posts if p["date"])
 
-    print("\n" + "=" * 50)
-    print("Posts captured : %d" % len(posts))
-    print("With a date    : %d" % dated)
+    print("\n" + "=" * 60)
+    print("Posts captured   : %d" % len(posts))
+    print("With a date      : %d" % dated)
     print("Words min/avg/max: %d / %d / %d" % (
         min(wc), sum(wc) // len(wc), max(wc)))
-    print("Skipped/failed : %d" % len(failures))
+    print("Skipped/failed   : %d" % len(failures))
     if failures:
         print("  " + ", ".join(failures[:25]))
-    print("Written to     : %s" % OUT)
+    print("Written to       : %s" % OUT)
 
 
 if __name__ == "__main__":
