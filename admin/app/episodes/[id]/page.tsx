@@ -8,7 +8,8 @@ import { buildShowNotesHtml, type ShowNotesData, type Section } from '@/lib/show
 import { buildGuestEmailHtml, type GuestEmailParts } from '@/lib/guest-email-template';
 import {
   buildYouTubeDescription,
-  normalizeChapters,
+  buildChapterLines,
+  chapterWarning,
   type YouTubeParts,
 } from '@/lib/youtube-template';
 import { stripFences } from '@/lib/anthropic';
@@ -525,10 +526,10 @@ export default function EpisodeDetailPage() {
         s.youtube_footer || ''
       );
 
-      const norm = normalizeChapters(parts.chapters || []);
+      const lines = buildChapterLines(parts.chapters);
 
       setYtText(text);
-      setYtNote(norm.valid ? null : norm.note);
+      setYtNote(chapterWarning(lines));
       setYtThumb(parts.thumbnail_phrase || null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Build failed');
@@ -846,6 +847,8 @@ export default function EpisodeDetailPage() {
                 />
                 <p className="dim" style={{ fontSize: 12, marginTop: 8 }}>
                   {ytText.length.toLocaleString()} of 5,000 characters. Editable before you copy.
+                  Chapter times show as __:__ because Riverside timestamps do not survive the
+                  Camtasia edit. Fill them in while you are in Camtasia.
                 </p>
               </div>
             )}
