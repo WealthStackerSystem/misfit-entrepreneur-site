@@ -11,6 +11,7 @@ const TABS: { href: string; label: string }[] = [
   { href: '/blog', label: 'Blog' },
   { href: '/sponsors', label: 'Sponsors' },
   { href: '/social', label: 'Social' },
+  { href: '/backfill', label: 'Backfill' },
   { href: '/settings', label: 'Settings' },
 ];
 
