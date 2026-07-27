@@ -32,6 +32,25 @@ type Asset = {
   version: number;
 };
 
+type Sponsor = {
+  id: string;
+  name: string;
+  tier: string | null;
+  slot: string | null;
+};
+
+type Pick = {
+  sponsor_id: string;
+  slot: string;
+};
+
+const SLOTS: { key: string; label: string; note: string }[] = [
+  { key: 'preroll', label: 'Pre-roll', note: 'Shown as Presented By' },
+  { key: 'midroll', label: 'Mid-roll', note: 'Shown as Also Supported By' },
+  { key: 'misfit3', label: 'Misfit 3 naming rights', note: 'Line inside the Misfit 3 section' },
+  { key: 'newsletter', label: 'Newsletter', note: 'The Minute only, not the page' },
+];
+
 const STEPS: { type: string; label: string }[] = [
   { type: 'show_notes_meta', label: 'Titles, bio, and summary' },
   { type: 'show_notes_sections_a', label: 'Sections 1 to 4' },
@@ -62,6 +81,11 @@ export default function EpisodeDetailPage() {
 
   const [publishing, setPublishing] = useState(false);
   const [publishResult, setPublishResult] = useState<string | null>(null);
+
+  const [sponsors, setSponsors] = useState<Sponsor[]>([]);
+  const [picks, setPicks] = useState<Pick[]>([]);
+  const [savingSponsors, setSavingSponsors] = useState(false);
+  const [sponsorsSaved, setSponsorsSaved] = useState(false);
 
   const [ytText, setYtText] = useState<string | null>(null);
   const [ytNote, setYtNote] = useState<string | null>(null);
@@ -98,6 +122,21 @@ export default function EpisodeDetailPage() {
 
     const rows = (as as Asset[]) ?? [];
     setAssets(rows);
+
+    const { data: allSponsors } = await supabase
+      .from('sponsors')
+      .select('id, name, tier, slot')
+      .eq('active', true)
+      .order('name');
+
+    setSponsors((allSponsors as Sponsor[]) ?? []);
+
+    const { data: epSponsors } = await supabase
+      .from('episode_sponsors')
+      .select('sponsor_id, slot')
+      .eq('episode_id', id);
+
+    setPicks((epSponsors as Pick[]) ?? []);
 
     const meta = rows.find((r) => r.asset_type === 'show_notes_meta');
     if (meta && meta.content) {
@@ -306,10 +345,52 @@ export default function EpisodeDetailPage() {
         return;
       }
 
-      const { data: sp } = await supabase
-        .from('sponsors')
-        .select('name, tier, shownotes_copy, offer_url, url')
-        .eq('active', true);
+      // Mirror the publish route: episode picks first, all active as fallback
+      let previewSponsors: {
+        name: string;
+        tier: string | null;
+        slot: string | null;
+        shownotes_copy: string | null;
+        offer_url: string | null;
+        url: string | null;
+      }[] = [];
+
+      const { data: pickedRows } = await supabase
+        .from('episode_sponsors')
+        .select('slot, position, sponsors(name, tier, shownotes_copy, offer_url, url)')
+        .eq('episode_id', id)
+        .order('position');
+
+      if (pickedRows && pickedRows.length > 0) {
+        for (const row of pickedRows as unknown as {
+          slot: string | null;
+          sponsors: {
+            name: string;
+            tier: string | null;
+            shownotes_copy: string | null;
+            offer_url: string | null;
+            url: string | null;
+          } | null;
+        }[]) {
+          if (!row.sponsors) continue;
+          previewSponsors.push({
+            name: row.sponsors.name,
+            tier: row.sponsors.tier,
+            slot: row.slot,
+            shownotes_copy: row.sponsors.shownotes_copy,
+            offer_url: row.sponsors.offer_url,
+            url: row.sponsors.url,
+          });
+        }
+      }
+
+      if (previewSponsors.length === 0) {
+        const { data: sp } = await supabase
+          .from('sponsors')
+          .select('name, tier, slot, shownotes_copy, offer_url, url')
+          .eq('active', true);
+        previewSponsors = (sp as typeof previewSponsors) || [];
+      }
 
       const epRecord = ep as Record<string, unknown>;
 
@@ -324,7 +405,7 @@ export default function EpisodeDetailPage() {
           libsyn_player_embed: (epRecord.libsyn_player_embed as string) || null,
           guest_links: (epRecord.guest_links as { website?: string | null; linkedin?: string | null }) || null,
         },
-        sp ? (sp as { name: string; tier: string | null; shownotes_copy: string | null; offer_url: string | null; url: string | null }[]) : [],
+        previewSponsors,
         (epRecord.transcript as string) || ''
       );
 
@@ -457,6 +538,75 @@ export default function EpisodeDetailPage() {
     setPublishing(false);
   }
 
+  function isPicked(sponsorId: string, slot: string): boolean {
+    return picks.some((p) => p.sponsor_id === sponsorId && p.slot === slot);
+  }
+
+  function togglePick(sponsorId: string, slot: string) {
+    setSponsorsSaved(false);
+    setPicks((prev) => {
+      const at = prev.findIndex(
+        (p) => p.sponsor_id === sponsorId && p.slot === slot
+      );
+      if (at !== -1) {
+        return prev.filter((_, i) => i !== at);
+      }
+      // Only one sponsor can hold the Misfit 3 naming rights
+      const cleaned =
+        slot === 'misfit3' ? prev.filter((p) => p.slot !== 'misfit3') : prev;
+      return cleaned.concat({ sponsor_id: sponsorId, slot: slot });
+    });
+  }
+
+  async function saveSponsors() {
+    setSavingSponsors(true);
+    setError(null);
+    setSponsorsSaved(false);
+
+    const supabase = createClient();
+
+    const { error: delErr } = await supabase
+      .from('episode_sponsors')
+      .delete()
+      .eq('episode_id', id);
+
+    if (delErr) {
+      setError(delErr.message);
+      setSavingSponsors(false);
+      return;
+    }
+
+    if (picks.length > 0) {
+      const order: Record<string, number> = {
+        preroll: 1,
+        midroll: 2,
+        misfit3: 3,
+        newsletter: 4,
+      };
+
+      const rows = picks.map((p) => ({
+        episode_id: id,
+        sponsor_id: p.sponsor_id,
+        slot: p.slot,
+        position: order[p.slot] || 9,
+      }));
+
+      const { error: insErr } = await supabase
+        .from('episode_sponsors')
+        .insert(rows);
+
+      if (insErr) {
+        setError(insErr.message);
+        setSavingSponsors(false);
+        return;
+      }
+    }
+
+    setSavingSponsors(false);
+    setSponsorsSaved(true);
+    setPreviewHtml(null);
+  }
+
   async function buildYouTube() {
     setBuildingYt(true);
     setError(null);
@@ -564,7 +714,8 @@ export default function EpisodeDetailPage() {
     return assets.some((a) => a.asset_type === type);
   }
 
-  const busy = running || building || buildingEmail || publishing || buildingYt;
+  const busy =
+    running || building || buildingEmail || publishing || buildingYt || savingSponsors;
 
   return (
     <div className="shell">
@@ -704,6 +855,83 @@ export default function EpisodeDetailPage() {
                 </button>
               </div>
             )}
+
+            <div className="card" style={{ marginBottom: 20 }}>
+              <div className="eyebrow">Sponsors</div>
+              <h3 style={{ marginBottom: 8 }}>This Episode</h3>
+              <p className="muted" style={{ fontSize: 14, marginBottom: 16 }}>
+                Pick which sponsors run in which slot. If you pick none, every active
+                sponsor appears, which is the old behaviour.
+              </p>
+
+              {sponsorsSaved && (
+                <div className="msg msg-success">
+                  Saved. Rebuild the preview to see the change.
+                </div>
+              )}
+
+              {sponsors.length === 0 && (
+                <p className="muted" style={{ fontSize: 14 }}>
+                  No active sponsors. Add one in the Sponsors tab.
+                </p>
+              )}
+
+              {sponsors.map((sp) => (
+                <div
+                  key={sp.id}
+                  style={{
+                    padding: '14px 0',
+                    borderBottom: '1px solid rgba(255,255,255,.05)',
+                  }}
+                >
+                  <div style={{ fontSize: 15, color: '#e8e8e8', fontWeight: 600 }}>
+                    {sp.name}
+                  </div>
+                  <div className="dim" style={{ fontSize: 12, marginBottom: 10 }}>
+                    {sp.tier || 'No tier'}
+                  </div>
+                  <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
+                    {SLOTS.map((slot) => (
+                      <label
+                        key={slot.key}
+                        title={slot.note}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 7,
+                          fontSize: 12.5,
+                          letterSpacing: 0,
+                          textTransform: 'none',
+                          fontWeight: 500,
+                          color: isPicked(sp.id, slot.key) ? '#F0B429' : '#8f8f8f',
+                          marginBottom: 0,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isPicked(sp.id, slot.key)}
+                          onChange={() => togglePick(sp.id, slot.key)}
+                          style={{ width: 'auto', margin: 0 }}
+                        />
+                        {slot.label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ))}
+
+              {sponsors.length > 0 && (
+                <button
+                  className="btn"
+                  onClick={saveSponsors}
+                  disabled={busy}
+                  style={{ marginTop: 18 }}
+                >
+                  {savingSponsors ? 'Saving...' : 'Save Sponsors'}
+                </button>
+              )}
+            </div>
 
             <div className="card" style={{ marginBottom: 20 }}>
               <div className="eyebrow">Assemble</div>
