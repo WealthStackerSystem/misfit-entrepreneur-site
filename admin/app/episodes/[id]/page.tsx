@@ -356,11 +356,12 @@ export default function EpisodeDetailPage() {
         shownotes_copy: string | null;
         offer_url: string | null;
         url: string | null;
+        logo_url: string | null;
       }[] = [];
 
       const { data: pickedRows } = await supabase
         .from('episode_sponsors')
-        .select('slot, position, sponsors(name, tier, shownotes_copy, offer_url, url)')
+        .select('slot, position, sponsors(name, tier, shownotes_copy, offer_url, url, logo_url)')
         .eq('episode_id', id)
         .order('position');
 
@@ -373,6 +374,7 @@ export default function EpisodeDetailPage() {
             shownotes_copy: string | null;
             offer_url: string | null;
             url: string | null;
+            logo_url: string | null;
           } | null;
         }[]) {
           if (!row.sponsors) continue;
@@ -383,6 +385,7 @@ export default function EpisodeDetailPage() {
             shownotes_copy: row.sponsors.shownotes_copy,
             offer_url: row.sponsors.offer_url,
             url: row.sponsors.url,
+            logo_url: row.sponsors.logo_url,
           });
         }
       }
@@ -390,7 +393,7 @@ export default function EpisodeDetailPage() {
       if (previewSponsors.length === 0) {
         const { data: sp } = await supabase
           .from('sponsors')
-          .select('name, tier, slot, shownotes_copy, offer_url, url')
+          .select('name, tier, slot, shownotes_copy, offer_url, url, logo_url')
           .eq('active', true);
         previewSponsors = (sp as typeof previewSponsors) || [];
       }
@@ -412,7 +415,14 @@ export default function EpisodeDetailPage() {
         (epRecord.transcript as string) || ''
       );
 
-      setPreviewHtml(html);
+      // Relative paths like /images/logo.jpg would resolve against the admin
+      // domain inside the iframe, so point them at the live site instead.
+      setPreviewHtml(
+        html.replace(
+          '<head>',
+          '<head>\n<base href="https://misfitentrepreneur.com/">'
+        )
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Build failed');
     }
