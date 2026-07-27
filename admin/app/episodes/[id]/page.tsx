@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { useParams } from 'next/navigation';
+import Link from 'next/link';
 import { createClient } from '@/lib/supabase-browser';
 import { buildShowNotesHtml, type ShowNotesData, type Section } from '@/lib/shownotes-template';
 import { buildGuestEmailHtml, type GuestEmailParts } from '@/lib/guest-email-template';
@@ -425,8 +426,15 @@ export default function EpisodeDetailPage() {
         return;
       }
 
+      const idxNote =
+        data.index === 'added'
+          ? ' Added to the podcast page index.'
+          : data.index === 'updated'
+          ? ' Podcast page index updated.'
+          : '';
+
       setPublishResult(
-        'Page ' + data.action + ' at ' + data.url + '. Netlify is deploying now.'
+        'Page ' + data.action + ' at ' + data.url + '.' + idxNote + ' Netlify is deploying now.'
       );
       load();
     } catch (err) {
@@ -477,6 +485,8 @@ export default function EpisodeDetailPage() {
               {wordCount.toLocaleString()} word transcript
               {' | '}
               <span className="pill pill-draft">{episode.status}</span>
+              {' | '}
+              <Link href={`/episodes/${id}/edit`}>Edit details</Link>
             </p>
 
             <div className="card" style={{ marginBottom: 20 }}>
