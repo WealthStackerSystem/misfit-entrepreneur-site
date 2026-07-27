@@ -44,6 +44,7 @@ export type SponsorInfo = {
   shownotes_copy: string | null;
   offer_url: string | null;
   url: string | null;
+  logo_url: string | null;
 };
 
 // How each slot is presented on the page. The misfit3 slot is handled
@@ -170,6 +171,7 @@ p{margin-bottom:16px;}
 
 .sponsor{background:rgba(255,255,255,.03);border:1px solid rgba(245,196,0,.22);border-radius:8px;padding:26px 30px;margin-bottom:14px;}
 .sponsor-label{display:inline-block;font-size:9px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:#0e0e0e;background:#F5C400;padding:4px 10px;border-radius:3px;margin-bottom:12px;}
+.sponsor-logo{display:block;height:46px;width:auto;max-width:190px;object-fit:contain;background:#fff;border-radius:4px;padding:7px 10px;margin-bottom:14px;}
 .sponsor h4{font-size:17px;font-weight:700;color:#fff;margin-bottom:8px;}
 .sponsor p{font-size:14px;color:#a9a29a;margin-bottom:12px;}
 .sponsor-group{font-size:10px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:#F5C400;margin:26px 0 14px;}
@@ -339,10 +341,15 @@ export function buildShowNotesHtml(
     const linkHtml = link
       ? '<a href="' + esc(link) + '">Learn more &rarr;</a>'
       : '';
+    const logoHtml = s.logo_url
+      ? '<img class="sponsor-logo" src="' + esc(s.logo_url) +
+        '" alt="' + esc(s.name) + '" loading="lazy">'
+      : '';
     return (
       '    <div class="sponsor"><div class="sponsor-label">' +
       esc(s.tier || 'Sponsor') +
-      '</div><h4>' + esc(s.name) + '</h4><p>' +
+      '</div>' + logoHtml +
+      '<h4>' + esc(s.name) + '</h4><p>' +
       (s.shownotes_copy || '') + '</p>' + linkHtml + '</div>'
     );
   }
