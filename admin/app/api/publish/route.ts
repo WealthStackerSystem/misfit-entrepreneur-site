@@ -11,16 +11,95 @@ import { stripFences } from '@/lib/anthropic';
 const OWNER = 'WealthStackerSystem';
 const REPO = 'misfit-entrepreneur-site';
 const BRANCH = 'main';
+const INDEX_PATH = 'episode_index.json';
 
 type Body = {
   episodeId: string;
 };
 
-type GitHubFileResponse = {
+type IndexEntry = {
+  num: string;
+  title: string;
+  slug: string;
+  guest: string;
+};
+
+type GitHubFile = {
   sha?: string;
   content?: string;
-  message?: string;
 };
+
+function ghHeaders(token: string) {
+  return {
+    Authorization: 'Bearer ' + token,
+    Accept: 'application/vnd.github+json',
+    'Content-Type': 'application/json',
+    'User-Agent': 'misfit-admin',
+  };
+}
+
+function contentsUrl(path: string) {
+  return 'https://api.github.com/repos/' + OWNER + '/' + REPO + '/contents/' + path;
+}
+
+/**
+ * Read a file from GitHub. Returns null if it does not exist.
+ */
+async function readFile(
+  token: string,
+  path: string
+): Promise<{ sha: string; text: string } | null> {
+  const res = await fetch(contentsUrl(path) + '?ref=' + BRANCH, {
+    headers: ghHeaders(token),
+  });
+
+  if (res.status === 404) return null;
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error('GitHub read failed on ' + path + ' (' + res.status + '): ' + err);
+  }
+
+  const json = (await res.json()) as GitHubFile;
+  const text = json.content
+    ? Buffer.from(json.content, 'base64').toString('utf8')
+    : '';
+
+  return { sha: json.sha || '', text: text };
+}
+
+/**
+ * Create or update a file on GitHub. Returns the commit sha.
+ */
+async function writeFile(
+  token: string,
+  path: string,
+  content: string,
+  message: string,
+  sha?: string
+): Promise<string> {
+  const payload: Record<string, unknown> = {
+    message: message,
+    content: Buffer.from(content, 'utf8').toString('base64'),
+    branch: BRANCH,
+  };
+
+  if (sha) payload.sha = sha;
+
+  const res = await fetch(contentsUrl(path), {
+    method: 'PUT',
+    headers: ghHeaders(token),
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error('GitHub write failed on ' + path + ' (' + res.status + '): ' + err);
+  }
+
+  const result = await res.json();
+  return result?.commit?.sha || '';
+}
 
 export async function POST(req: Request) {
   const token = process.env.GITHUB_TOKEN;
@@ -76,6 +155,7 @@ export async function POST(req: Request) {
   for (const r of rows) {
     if (!r.content) continue;
     if (r.asset_type.indexOf('show_notes_') !== 0) continue;
+    if (r.asset_type === 'show_notes_html') continue;
 
     let parsed: Record<string, unknown>;
     try {
@@ -102,7 +182,6 @@ export async function POST(req: Request) {
 
   merged.sections = sections;
 
-  // Guard against publishing a half-generated page
   const required = [
     'show_notes_meta',
     'show_notes_sections_a',
@@ -147,75 +226,84 @@ export async function POST(req: Request) {
     ep.transcript || ''
   );
 
-  const path = 'episodes/ep-' + ep.episode_number + '-episode.html';
-  const apiBase = 'https://api.github.com/repos/' + OWNER + '/' + REPO + '/contents/' + path;
+  const slug = 'ep-' + ep.episode_number + '-episode';
+  const path = 'episodes/' + slug + '.html';
+  const pageTitle = ep.title || merged.recommended_title || 'Untitled Episode';
 
-  const headers = {
-    Authorization: 'Bearer ' + token,
-    Accept: 'application/vnd.github+json',
-    'Content-Type': 'application/json',
-    'User-Agent': 'misfit-admin',
-  };
-
-  // --- Get the existing file SHA, if the file exists -----------------
-  let sha: string | undefined = undefined;
-
-  try {
-    const getRes = await fetch(apiBase + '?ref=' + BRANCH, { headers });
-    if (getRes.ok) {
-      const existing = (await getRes.json()) as GitHubFileResponse;
-      sha = existing.sha;
-    } else if (getRes.status !== 404) {
-      const errText = await getRes.text();
-      return Response.json(
-        { ok: false, error: 'GitHub read failed (' + getRes.status + '): ' + errText },
-        { status: 502 }
-      );
-    }
-  } catch (err) {
-    return Response.json(
-      { ok: false, error: err instanceof Error ? err.message : 'GitHub read failed' },
-      { status: 502 }
-    );
-  }
-
-  // --- Commit --------------------------------------------------------
-  const commitMessage =
-    (sha ? 'Update' : 'Add') +
-    ' show notes for episode ' +
-    ep.episode_number +
-    (ep.title ? ': ' + ep.title : '');
-
-  const payload: Record<string, unknown> = {
-    message: commitMessage,
-    content: Buffer.from(html, 'utf8').toString('base64'),
-    branch: BRANCH,
-  };
-
-  if (sha) payload.sha = sha;
-
+  let pageAction = 'created';
   let commitSha = '';
+  let indexAction = 'unchanged';
 
   try {
-    const putRes = await fetch(apiBase, {
-      method: 'PUT',
-      headers,
-      body: JSON.stringify(payload),
-    });
+    // --- Commit the show notes page ---------------------------------
+    const existing = await readFile(token, path);
+    pageAction = existing ? 'updated' : 'created';
 
-    if (!putRes.ok) {
-      const errText = await putRes.text();
-      return Response.json(
-        { ok: false, error: 'GitHub commit failed (' + putRes.status + '): ' + errText },
-        { status: 502 }
-      );
+    const commitMessage =
+      (existing ? 'Update' : 'Add') +
+      ' show notes for episode ' +
+      ep.episode_number +
+      (ep.title ? ': ' + ep.title : '');
+
+    commitSha = await writeFile(
+      token,
+      path,
+      html,
+      commitMessage,
+      existing ? existing.sha : undefined
+    );
+
+    // --- Update episode_index.json ----------------------------------
+    // The public podcast page reads this file to decide whether an
+    // episode has a show notes page. Without an entry here, the page
+    // exists but nothing links to it.
+    const idxFile = await readFile(token, INDEX_PATH);
+
+    if (idxFile) {
+      let index: IndexEntry[] = [];
+      try {
+        const parsed = JSON.parse(idxFile.text);
+        if (Array.isArray(parsed)) index = parsed as IndexEntry[];
+      } catch {
+        throw new Error('episode_index.json is not valid JSON. Fix it before publishing.');
+      }
+
+      const numStr = String(ep.episode_number);
+      const entry: IndexEntry = {
+        num: numStr,
+        title: numStr + ': ' + pageTitle,
+        slug: slug,
+        guest: ep.guest_name || '',
+      };
+
+      const at = index.findIndex((e) => String(e.num) === numStr);
+
+      if (at === -1) {
+        // Newest first, matching the existing file order
+        index.unshift(entry);
+        indexAction = 'added';
+      } else if (
+        index[at].slug !== entry.slug ||
+        index[at].title !== entry.title ||
+        index[at].guest !== entry.guest
+      ) {
+        index[at] = entry;
+        indexAction = 'updated';
+      }
+
+      if (indexAction !== 'unchanged') {
+        await writeFile(
+          token,
+          INDEX_PATH,
+          JSON.stringify(index, null, 2) + '\n',
+          'Index episode ' + ep.episode_number,
+          idxFile.sha
+        );
+      }
     }
-
-    const result = await putRes.json();
-    commitSha = result?.commit?.sha || '';
   } catch (err) {
     return Response.json(
-      { ok: false, error: err instanceof Error ? err.message : 'GitHub commit failed' },
+      { ok: false, error: err instanceof Error ? err.message : 'Publish failed' },
       { status: 502 }
     );
   }
@@ -259,7 +347,8 @@ export async function POST(req: Request) {
     path: path,
     url: 'https://misfitentrepreneur.com/' + path,
     commit: commitSha,
-    action: sha ? 'updated' : 'created',
+    action: pageAction,
+    index: indexAction,
     bytes: html.length,
   });
 }
