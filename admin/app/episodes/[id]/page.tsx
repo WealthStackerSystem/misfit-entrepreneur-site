@@ -6,6 +6,11 @@ import Link from 'next/link';
 import { createClient } from '@/lib/supabase-browser';
 import { buildShowNotesHtml, type ShowNotesData, type Section } from '@/lib/shownotes-template';
 import { buildGuestEmailHtml, type GuestEmailParts } from '@/lib/guest-email-template';
+import {
+  buildYouTubeDescription,
+  normalizeChapters,
+  type YouTubeParts,
+} from '@/lib/youtube-template';
 import { stripFences } from '@/lib/anthropic';
 import Nav from '../../components/Nav';
 
@@ -56,6 +61,11 @@ export default function EpisodeDetailPage() {
 
   const [publishing, setPublishing] = useState(false);
   const [publishResult, setPublishResult] = useState<string | null>(null);
+
+  const [ytText, setYtText] = useState<string | null>(null);
+  const [ytNote, setYtNote] = useState<string | null>(null);
+  const [ytThumb, setYtThumb] = useState<string | null>(null);
+  const [buildingYt, setBuildingYt] = useState(false);
 
   const [titleOptions, setTitleOptions] = useState<string[]>([]);
   const [customTitle, setCustomTitle] = useState('');
@@ -218,6 +228,8 @@ export default function EpisodeDetailPage() {
 
     if (assetType === 'guest_email_parts') {
       setEmailHtml(null);
+    } else if (assetType === 'youtube_description') {
+      setYtText(null);
     } else {
       setPreviewHtml(null);
     }
@@ -444,6 +456,93 @@ export default function EpisodeDetailPage() {
     setPublishing(false);
   }
 
+  async function buildYouTube() {
+    setBuildingYt(true);
+    setError(null);
+
+    try {
+      const supabase = createClient();
+
+      const { data: rows } = await supabase
+        .from('episode_assets')
+        .select('asset_type, content')
+        .eq('episode_id', id)
+        .eq('is_current', true);
+
+      const asset = rows?.find((r) => r.asset_type === 'youtube_description');
+
+      if (!asset || !asset.content) {
+        setError('Generate the YouTube copy first.');
+        setBuildingYt(false);
+        return;
+      }
+
+      let parts: YouTubeParts;
+      try {
+        parts = JSON.parse(stripFences(asset.content));
+      } catch {
+        setError('Could not parse the YouTube output. Regenerate it.');
+        setBuildingYt(false);
+        return;
+      }
+
+      const { data: ep } = await supabase
+        .from('episodes')
+        .select('episode_number, title, guest_name, guest_company, guest_links')
+        .eq('id', id)
+        .single();
+
+      if (!ep) {
+        setError('Could not load episode data.');
+        setBuildingYt(false);
+        return;
+      }
+
+      const { data: settingsRows } = await supabase
+        .from('settings')
+        .select('key, value');
+
+      const s: Record<string, string> = {};
+      if (settingsRows) {
+        for (const row of settingsRows) {
+          if (row.value) s[row.key] = row.value;
+        }
+      }
+
+      const epRecord = ep as Record<string, unknown>;
+
+      const text = buildYouTubeDescription(
+        parts,
+        {
+          episode_number: epRecord.episode_number as number,
+          title: (epRecord.title as string) || null,
+          guest_name: (epRecord.guest_name as string) || null,
+          guest_company: (epRecord.guest_company as string) || null,
+          guest_links:
+            (epRecord.guest_links as { website?: string | null; linkedin?: string | null }) ||
+            null,
+        },
+        s.youtube_footer || ''
+      );
+
+      const norm = normalizeChapters(parts.chapters || []);
+
+      setYtText(text);
+      setYtNote(norm.valid ? null : norm.note);
+      setYtThumb(parts.thumbnail_phrase || null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Build failed');
+    }
+
+    setBuildingYt(false);
+  }
+
+  function copyYouTube() {
+    if (ytText) {
+      navigator.clipboard.writeText(ytText);
+    }
+  }
+
   function copyHtml() {
     if (previewHtml) {
       navigator.clipboard.writeText(previewHtml);
@@ -464,7 +563,7 @@ export default function EpisodeDetailPage() {
     return assets.some((a) => a.asset_type === type);
   }
 
-  const busy = running || building || buildingEmail || publishing;
+  const busy = running || building || buildingEmail || publishing || buildingYt;
 
   return (
     <div className="shell">
@@ -695,6 +794,59 @@ export default function EpisodeDetailPage() {
                     background: '#e8e8e8',
                   }}
                 />
+              </div>
+            )}
+
+            <div className="card" style={{ marginBottom: 20 }}>
+              <div className="eyebrow">YouTube</div>
+              <h3 style={{ marginBottom: 8 }}>Description and Chapters</h3>
+              <p className="muted" style={{ fontSize: 14, marginBottom: 16 }}>
+                Writes the episode intro, the learn bullets, chapter timestamps from the transcript, hashtags, and a thumbnail phrase. Appends your standard footer from Settings.
+              </p>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <button
+                  className="btn btn-ghost"
+                  onClick={() => runSingle('youtube_description')}
+                  disabled={busy}
+                >
+                  {hasAsset('youtube_description') ? 'Regenerate Copy' : 'Generate Copy'}
+                </button>
+                <button className="btn" onClick={buildYouTube} disabled={busy}>
+                  {buildingYt ? 'Building...' : 'Build Description'}
+                </button>
+                {ytText !== null && (
+                  <button className="btn btn-ghost" onClick={copyYouTube}>
+                    Copy Description
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {ytThumb !== null && (
+              <div className="card" style={{ marginBottom: 20 }}>
+                <div className="eyebrow">Thumbnail Phrase</div>
+                <h2 style={{ marginTop: 4 }}>{ytThumb}</h2>
+              </div>
+            )}
+
+            {ytNote !== null && (
+              <div className="msg msg-error" style={{ marginBottom: 20 }}>
+                {ytNote}
+              </div>
+            )}
+
+            {ytText !== null && (
+              <div className="card" style={{ marginBottom: 20 }}>
+                <div className="eyebrow">Description</div>
+                <textarea
+                  value={ytText}
+                  onChange={(e) => setYtText(e.target.value)}
+                  rows={22}
+                  style={{ fontFamily: 'ui-monospace, monospace', fontSize: 13 }}
+                />
+                <p className="dim" style={{ fontSize: 12, marginTop: 8 }}>
+                  {ytText.length.toLocaleString()} of 5,000 characters. Editable before you copy.
+                </p>
               </div>
             )}
 
