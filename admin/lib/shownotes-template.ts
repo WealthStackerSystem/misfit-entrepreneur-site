@@ -40,10 +40,19 @@ export type EpisodeInfo = {
 export type SponsorInfo = {
   name: string;
   tier: string | null;
+  slot: string | null;
   shownotes_copy: string | null;
   offer_url: string | null;
   url: string | null;
 };
+
+// How each slot is presented on the page. The misfit3 slot is handled
+// separately because it renders inside the Misfit 3 section rather than
+// in the sponsor block, and newsletter sponsors never appear here at all.
+const SLOT_HEADINGS: { slot: string; heading: string }[] = [
+  { slot: 'preroll', heading: 'Presented By' },
+  { slot: 'midroll', heading: 'Also Supported By' },
+];
 
 function esc(s: string): string {
   return s
@@ -163,6 +172,10 @@ p{margin-bottom:16px;}
 .sponsor-label{display:inline-block;font-size:9px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:#0e0e0e;background:#F5C400;padding:4px 10px;border-radius:3px;margin-bottom:12px;}
 .sponsor h4{font-size:17px;font-weight:700;color:#fff;margin-bottom:8px;}
 .sponsor p{font-size:14px;color:#a9a29a;margin-bottom:12px;}
+.sponsor-group{font-size:10px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:#F5C400;margin:26px 0 14px;}
+.sponsor-group:first-of-type{margin-top:0;}
+.m3-sponsor{font-size:12.5px;color:#7a7261;margin:-14px 0 26px;font-weight:600;}
+.m3-sponsor a{color:#8a6a00;}
 
 details{background:#141414;border:1px solid rgba(255,255,255,.06);border-radius:8px;padding:20px 26px;}
 summary{cursor:pointer;font-size:13px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#F5C400;list-style:none;}
@@ -321,20 +334,48 @@ export function buildShowNotesHtml(
     )
     .join('\n');
 
-  const sponsorHtml = sponsors
-    .map((s) => {
-      const link = s.offer_url || s.url || '';
-      const linkHtml = link
-        ? '<a href="' + esc(link) + '">Learn more &rarr;</a>'
-        : '';
-      return (
-        '    <div class="sponsor"><div class="sponsor-label">' +
-        esc(s.tier || 'Sponsor') +
-        '</div><h4>' + esc(s.name) + '</h4><p>' +
-        (s.shownotes_copy || '') + '</p>' + linkHtml + '</div>'
-      );
-    })
-    .join('\n');
+  function sponsorCard(s: SponsorInfo): string {
+    const link = s.offer_url || s.url || '';
+    const linkHtml = link
+      ? '<a href="' + esc(link) + '">Learn more &rarr;</a>'
+      : '';
+    return (
+      '    <div class="sponsor"><div class="sponsor-label">' +
+      esc(s.tier || 'Sponsor') +
+      '</div><h4>' + esc(s.name) + '</h4><p>' +
+      (s.shownotes_copy || '') + '</p>' + linkHtml + '</div>'
+    );
+  }
+
+  // Newsletter-only sponsors are excluded from the page entirely.
+  const pageSponsors = sponsors.filter((s) => s.slot !== 'newsletter');
+
+  const misfit3Sponsor = pageSponsors.find((s) => s.slot === 'misfit3') || null;
+
+  const groups: string[] = [];
+  const placed: SponsorInfo[] = [];
+
+  for (const g of SLOT_HEADINGS) {
+    const inSlot = pageSponsors.filter((s) => s.slot === g.slot);
+    if (inSlot.length === 0) continue;
+    inSlot.forEach((s) => placed.push(s));
+    groups.push(
+      '    <h3 class="sponsor-group">' + esc(g.heading) + '</h3>\n' +
+      inSlot.map(sponsorCard).join('\n')
+    );
+  }
+
+  // Anything without a recognised slot still gets shown, so a sponsor can
+  // never silently vanish because of a missing or unexpected slot value.
+  const unplaced = pageSponsors.filter(
+    (s) => s.slot !== 'misfit3' && placed.indexOf(s) === -1
+  );
+  if (unplaced.length > 0) {
+    groups.push(unplaced.map(sponsorCard).join('\n'));
+  }
+
+  const sponsorHtml = groups.join('\n');
+  const hasSponsorBlock = groups.length > 0;
 
   const guestLinksHtml = [
     links.website ? '<a href="' + esc(links.website) + '" target="_blank" rel="noopener">Website</a>' : '',
@@ -344,7 +385,7 @@ export function buildShowNotesHtml(
     .join('\n        ');
 
   const sponsorSection =
-    sponsors.length > 0
+    hasSponsorBlock
       ? '<section class="band-gold">\n  <div class="wrap">\n' +
         '    <div class="eyebrow">Supported By</div>\n' +
         '    <h2>This Week\'s Sponsors</h2>\n' +
@@ -433,6 +474,7 @@ ${sectionsHtml}
     <div class="eyebrow">The Misfit 3&trade;</div>
     <h2>${esc(possessive)} Three</h2>
     <p class="m3-intro">The three things ${esc(firstName || 'they')} would leave behind for the generations that come after.</p>
+    ${misfit3Sponsor ? '<p class="m3-sponsor">The Misfit 3&trade; is brought to you by <a href="' + esc(misfit3Sponsor.offer_url || misfit3Sponsor.url || '#') + '">' + esc(misfit3Sponsor.name) + '</a></p>' : ''}
     <div class="m3-grid">
 ${m3Html}
     </div>
