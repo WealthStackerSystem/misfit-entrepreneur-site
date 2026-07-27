@@ -11,6 +11,10 @@ type Stats = {
   evergreen: number;
 };
 
+const BATCH_SIZE = 8;
+const MAX_BATCHES = 120;
+const MAX_CONSECUTIVE_FAILURES = 3;
+
 export default function BackfillPage() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [running, setRunning] = useState(false);
@@ -60,33 +64,59 @@ export default function BackfillPage() {
     setLog((prev) => prev.concat(line));
   }
 
-  async function runOneBatch(): Promise<{ done: boolean; ok: boolean }> {
+  type BatchOutcome = {
+    status: 'ok' | 'done' | 'retry' | 'fatal';
+    message: string;
+  };
+
+  async function runOneBatch(): Promise<BatchOutcome> {
     const res = await fetch('/api/backfill', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ batchSize: 25 }),
+      body: JSON.stringify({ batchSize: BATCH_SIZE }),
     });
 
-    const data = await res.json();
+    const raw = await res.text();
+
+    // A timeout or crash returns an HTML error page, not JSON.
+    let data: Record<string, unknown>;
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      if (res.status === 502 || res.status === 504 || raw.indexOf('<') === 0) {
+        return {
+          status: 'retry',
+          message:
+            'Batch timed out (' + res.status + '). Retrying with the next batch.',
+        };
+      }
+      return {
+        status: 'fatal',
+        message: 'Unreadable response (' + res.status + '): ' + raw.slice(0, 120),
+      };
+    }
 
     if (!data.ok) {
-      setError(data.error || 'Backfill failed');
-      addLog('ERROR: ' + (data.error || 'unknown'));
-      return { done: true, ok: false };
+      return {
+        status: 'retry',
+        message: 'Batch failed: ' + String(data.error || 'unknown'),
+      };
     }
 
-    if (data.tagged === 0 && data.remaining === 0) {
-      addLog('Nothing left to tag.');
-      return { done: true, ok: true };
+    const tagged = Number(data.tagged || 0);
+    const remaining = Number(data.remaining || 0);
+
+    if (tagged === 0 && remaining === 0) {
+      return { status: 'done', message: 'Nothing left to tag.' };
     }
 
-    let line = 'Tagged ' + data.tagged + '. Remaining: ' + data.remaining + '.';
-    if (Array.isArray(data.failed) && data.failed.length > 0) {
-      line += ' Skipped: ' + data.failed.join(', ');
+    let line = 'Tagged ' + tagged + '. Remaining: ' + remaining + '.';
+    const failed = data.failed;
+    if (Array.isArray(failed) && failed.length > 0) {
+      line += ' Skipped: ' + failed.join(', ');
     }
-    addLog(line);
 
-    return { done: data.remaining === 0, ok: true };
+    return { status: remaining === 0 ? 'done' : 'ok', message: line };
   }
 
   async function runAll() {
@@ -95,29 +125,56 @@ export default function BackfillPage() {
     setLog([]);
     stopRef.current = false;
 
-    addLog('Starting. Batches of 25, roughly 20 seconds each.');
+    addLog(
+      'Starting. Batches of ' + BATCH_SIZE + '. A timed out batch is retried automatically.'
+    );
 
-    // Hard ceiling so a bug can never loop forever
-    for (let i = 0; i < 40; i++) {
+    let consecutiveFailures = 0;
+
+    for (let i = 0; i < MAX_BATCHES; i++) {
       if (stopRef.current) {
         addLog('Stopped.');
         break;
       }
 
-      let result: { done: boolean; ok: boolean };
+      let outcome: BatchOutcome;
       try {
-        result = await runOneBatch();
+        outcome = await runOneBatch();
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Request failed');
-        addLog('ERROR: request failed');
+        outcome = {
+          status: 'retry',
+          message:
+            'Request error: ' + (err instanceof Error ? err.message : 'unknown'),
+        };
+      }
+
+      addLog(outcome.message);
+      await loadStats();
+
+      if (outcome.status === 'fatal') {
+        setError(outcome.message);
         break;
       }
 
-      await loadStats();
-
-      if (result.done) {
-        if (result.ok) addLog('Finished.');
+      if (outcome.status === 'done') {
+        addLog('Finished.');
         break;
+      }
+
+      if (outcome.status === 'retry') {
+        consecutiveFailures += 1;
+        if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+          setError(
+            'Stopped after ' +
+              MAX_CONSECUTIVE_FAILURES +
+              ' failed batches in a row. Progress so far is saved. Try again in a moment.'
+          );
+          break;
+        }
+        // brief pause before retrying
+        await new Promise((r) => setTimeout(r, 1500));
+      } else {
+        consecutiveFailures = 0;
       }
     }
 
@@ -173,9 +230,9 @@ export default function BackfillPage() {
           <div className="eyebrow">Run</div>
           <h3 style={{ marginBottom: 8 }}>Tag the Archive</h3>
           <p className="muted" style={{ fontSize: 14, marginBottom: 16 }}>
-            Runs continuously until everything is tagged. Roughly 15 batches for a full
-            back catalog. Safe to stop and resume, and safe to run again later after new
-            episodes are added.
+            Runs continuously until everything is tagged. A full back catalog takes around
+            ten minutes. Leave this tab open. Safe to stop and resume, and safe to run
+            again after new episodes are added.
           </p>
 
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
