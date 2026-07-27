@@ -207,13 +207,14 @@ export async function POST(req: Request) {
     shownotes_copy: string | null;
     offer_url: string | null;
     url: string | null;
+    logo_url: string | null;
   };
 
   let sponsorList: SponsorRow[] = [];
 
   const { data: picked } = await supabase
     .from('episode_sponsors')
-    .select('slot, position, sponsors(name, tier, shownotes_copy, offer_url, url)')
+    .select('slot, position, sponsors(name, tier, shownotes_copy, offer_url, url, logo_url)')
     .eq('episode_id', body.episodeId)
     .order('position');
 
@@ -230,6 +231,7 @@ export async function POST(req: Request) {
         shownotes_copy: row.sponsors.shownotes_copy,
         offer_url: row.sponsors.offer_url,
         url: row.sponsors.url,
+        logo_url: row.sponsors.logo_url,
       });
     }
   }
@@ -237,7 +239,7 @@ export async function POST(req: Request) {
   if (sponsorList.length === 0) {
     const { data: sp } = await supabase
       .from('sponsors')
-      .select('name, tier, slot, shownotes_copy, offer_url, url')
+      .select('name, tier, slot, shownotes_copy, offer_url, url, logo_url')
       .eq('active', true);
     sponsorList = (sp as SponsorRow[]) || [];
   }
