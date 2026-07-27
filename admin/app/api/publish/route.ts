@@ -197,10 +197,50 @@ export async function POST(req: Request) {
   }
 
   // --- Sponsors -----------------------------------------------------
-  const { data: sp } = await supabase
-    .from('sponsors')
-    .select('name, tier, shownotes_copy, offer_url, url')
-    .eq('active', true);
+  // Use the sponsors picked for this episode. If none have been picked,
+  // fall back to every active sponsor so an episode never publishes with
+  // an empty sponsor block by accident.
+  type SponsorRow = {
+    name: string;
+    tier: string | null;
+    slot: string | null;
+    shownotes_copy: string | null;
+    offer_url: string | null;
+    url: string | null;
+  };
+
+  let sponsorList: SponsorRow[] = [];
+
+  const { data: picked } = await supabase
+    .from('episode_sponsors')
+    .select('slot, position, sponsors(name, tier, shownotes_copy, offer_url, url)')
+    .eq('episode_id', body.episodeId)
+    .order('position');
+
+  if (picked && picked.length > 0) {
+    for (const row of picked as unknown as {
+      slot: string | null;
+      sponsors: Omit<SponsorRow, 'slot'> | null;
+    }[]) {
+      if (!row.sponsors) continue;
+      sponsorList.push({
+        name: row.sponsors.name,
+        tier: row.sponsors.tier,
+        slot: row.slot,
+        shownotes_copy: row.sponsors.shownotes_copy,
+        offer_url: row.sponsors.offer_url,
+        url: row.sponsors.url,
+      });
+    }
+  }
+
+  if (sponsorList.length === 0) {
+    const { data: sp } = await supabase
+      .from('sponsors')
+      .select('name, tier, slot, shownotes_copy, offer_url, url')
+      .eq('active', true);
+    sponsorList = (sp as SponsorRow[]) || [];
+  }
 
   // --- Build the page ------------------------------------------------
   const html = buildShowNotesHtml(
@@ -214,15 +254,7 @@ export async function POST(req: Request) {
       libsyn_player_embed: ep.libsyn_player_embed,
       guest_links: ep.guest_links,
     },
-    sp
-      ? (sp as {
-          name: string;
-          tier: string | null;
-          shownotes_copy: string | null;
-          offer_url: string | null;
-          url: string | null;
-        }[])
-      : [],
+    sponsorList,
     ep.transcript || ''
   );
 
