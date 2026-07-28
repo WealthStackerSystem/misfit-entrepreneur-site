@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { createClient } from '@/lib/supabase-browser';
 import Nav from '../components/Nav';
 import QuoteCard from '../components/QuoteCard';
+import { renderCardPng } from '@/lib/render-card';
 
 type Post = {
   id: string;
@@ -14,6 +15,8 @@ type Post = {
   scheduled_for: string | null;
   status: string;
   source: string | null;
+  card_quote: string | null;
+  image_url: string | null;
 };
 
 type EpisodeLite = {
@@ -54,13 +57,14 @@ export default function SocialPage() {
   const [count, setCount] = useState('5');
   const [generating, setGenerating] = useState(false);
   const [cardFor, setCardFor] = useState<string | null>(null);
+  const [makingImages, setMakingImages] = useState(false);
 
   async function load() {
     const supabase = createClient();
 
     const { data, error: err } = await supabase
       .from('social_posts')
-      .select('id, episode_id, platform, content, scheduled_for, status, source')
+      .select('id, episode_id, platform, content, scheduled_for, status, source, card_quote, image_url')
       .order('scheduled_for', { ascending: true, nullsFirst: false })
       .limit(300);
 
@@ -86,9 +90,71 @@ export default function SocialPage() {
       const map: Record<string, EpisodeLite> = {};
       for (const e of (eps as EpisodeLite[]) ?? []) map[e.id] = e;
       setEpisodes(map);
+
+      // Instagram posts written by the Monday job carry a quote but no
+      // image yet. Canvas only exists in the browser, so they get rendered
+      // and uploaded here, once, the first time the queue is opened.
+      const needing = rows.filter(
+        (p) =>
+          p.platform === 'instagram' &&
+          !p.image_url &&
+          p.card_quote &&
+          p.episode_id &&
+          map[p.episode_id]
+      );
+
+      if (needing.length > 0) {
+        makeMissingImages(needing, map);
+      }
     }
 
     setLoading(false);
+  }
+
+  async function makeMissingImages(
+    needing: Post[],
+    epMap: Record<string, EpisodeLite>
+  ) {
+    setMakingImages(true);
+
+    for (const p of needing) {
+      const ep = p.episode_id ? epMap[p.episode_id] : null;
+      if (!ep || !p.card_quote) continue;
+
+      try {
+        const png = await renderCardPng({
+          quote: p.card_quote,
+          attribution: ep.guest_name || 'The Misfit Entrepreneur',
+          episodeNumber: ep.episode_number,
+          width: 1080,
+          height: 1350,
+          theme: 'dark',
+        });
+
+        const res = await fetch('/api/upload-card', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: 'ep-' + ep.episode_number + '-ig-' + p.id.slice(0, 8),
+            data: png,
+          }),
+        });
+
+        const data = await res.json();
+        if (!data.ok) continue;
+
+        const supabase = createClient();
+        await supabase
+          .from('social_posts')
+          .update({ image_url: data.url })
+          .eq('id', p.id);
+      } catch {
+        // A failed card should never block the queue from rendering
+      }
+    }
+
+    setMakingImages(false);
+    load();
   }
 
   useEffect(() => {
@@ -186,6 +252,11 @@ export default function SocialPage() {
 
         {error !== null && <div className="msg msg-error">{error}</div>}
         {message !== null && <div className="msg msg-success">{message}</div>}
+        {makingImages && (
+          <div className="msg msg-success">
+            Building Instagram images. Leave this tab open a moment.
+          </div>
+        )}
 
         <div className="card-grid" style={{ marginBottom: 20 }}>
           <div className="card">
@@ -302,17 +373,32 @@ export default function SocialPage() {
                 )}
               </div>
 
-              <p
-                style={{
-                  fontSize: 14,
-                  color: '#d0d0d0',
-                  whiteSpace: 'pre-wrap',
-                  marginBottom: 10,
-                  lineHeight: 1.65,
-                }}
-              >
-                {p.content}
-              </p>
+              <div style={{ display: 'flex', gap: 16, marginBottom: 10 }}>
+                {p.image_url && (
+                  <img
+                    src={p.image_url}
+                    alt=""
+                    style={{
+                      width: 110,
+                      height: 'auto',
+                      borderRadius: 4,
+                      flexShrink: 0,
+                      border: '1px solid rgba(255,255,255,.08)',
+                    }}
+                  />
+                )}
+                <p
+                  style={{
+                    fontSize: 14,
+                    color: '#d0d0d0',
+                    whiteSpace: 'pre-wrap',
+                    lineHeight: 1.65,
+                    margin: 0,
+                  }}
+                >
+                  {p.content}
+                </p>
+              </div>
 
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                 <span
