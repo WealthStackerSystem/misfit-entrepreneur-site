@@ -55,6 +55,7 @@ export default function BlogPage() {
   const [sourceUrl, setSourceUrl] = useState('');
   const [sourceText, setSourceText] = useState('');
   const [generating, setGenerating] = useState(false);
+  const [stage, setStage] = useState<string | null>(null);
 
   const [openId, setOpenId] = useState<string | null>(null);
   const [draftTitle, setDraftTitle] = useState('');
@@ -97,11 +98,16 @@ export default function BlogPage() {
     setError(null);
     setMessage(null);
 
+    // Two calls. Writing the post and naming it are separate requests so
+    // neither runs up against the function time limit.
     try {
+      setStage('Writing the post...');
+
       const res = await fetch('/api/blog-generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          step: 'body',
           mode: mode,
           input: input,
           sourceUrl: sourceUrl,
@@ -114,20 +120,60 @@ export default function BlogPage() {
       try {
         data = JSON.parse(raw);
       } catch {
-        setError('Generation timed out. Try again.');
+        setError('The post took too long to write. Try again.');
         setGenerating(false);
+        setStage(null);
         return;
       }
 
       if (!data.ok) {
         setError(String(data.error || 'Generation failed'));
         setGenerating(false);
+        setStage(null);
         return;
       }
 
-      setMessage(
-        'Drafted "' + String(data.title) + '" at ' + String(data.words) + ' words.'
-      );
+      const articleId = String(data.id);
+      const words = Number(data.words || 0);
+
+      setStage('Naming it...');
+
+      const metaRes = await fetch('/api/blog-generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ step: 'meta', articleId: articleId, mode: mode, input: 'meta' }),
+      });
+
+      const metaRaw = await metaRes.text();
+      let metaData: Record<string, unknown>;
+      try {
+        metaData = JSON.parse(metaRaw);
+      } catch {
+        // The post itself is saved, so this is recoverable
+        setMessage(
+          'Post written at ' + words + ' words, but the title step failed. ' +
+            'Open the draft and give it a title.'
+        );
+        setInput('');
+        setSourceText('');
+        setSourceUrl('');
+        setGenerating(false);
+        setStage(null);
+        load();
+        return;
+      }
+
+      if (!metaData.ok) {
+        setMessage(
+          'Post written at ' + words + ' words. Title step failed: ' +
+            String(metaData.error || '')
+        );
+      } else {
+        setMessage(
+          'Drafted "' + String(metaData.title) + '" at ' + words + ' words.'
+        );
+      }
+
       setInput('');
       setSourceText('');
       setSourceUrl('');
@@ -137,6 +183,7 @@ export default function BlogPage() {
     }
 
     setGenerating(false);
+    setStage(null);
   }
 
   function openArticle(a: Article) {
@@ -299,8 +346,13 @@ export default function BlogPage() {
           </div>
 
           <button className="btn" onClick={generate} disabled={busy}>
-            {generating ? 'Writing...' : 'Write the Post'}
+            {generating ? stage || 'Writing...' : 'Write the Post'}
           </button>
+          {generating && (
+            <p className="dim" style={{ fontSize: 12, marginTop: 10 }}>
+              This takes about half a minute. Leave the page open.
+            </p>
+          )}
         </div>
 
         {loading && <p className="muted">Loading...</p>}
