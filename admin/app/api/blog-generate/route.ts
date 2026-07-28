@@ -4,11 +4,29 @@ import { createAdminClient } from '@/lib/supabase-server';
 import { getAnthropic, fillTemplate, stripFences } from '@/lib/anthropic';
 
 type Body = {
+  step?: 'body' | 'meta';
   mode: 'topic' | 'thesis' | 'source';
   input: string;
   sourceUrl?: string;
   sourceText?: string;
+  articleId?: string;
 };
+
+// Deriving the title and metadata from a finished post is mechanical, so it
+// lives here rather than in the prompts table where it would just be one more
+// thing to keep in sync.
+const META_SYSTEM = `You are given a finished blog post by Dave Lukas of The Misfit Entrepreneur.
+
+Produce metadata for it. Do not rewrite the post.
+
+title_options - 4 titles under 70 characters. Concrete, no colons unless the post earns one, no "The Ultimate Guide". Dave's titles name the idea plainly.
+slug - lowercase hyphenated, from the strongest title, under 60 characters.
+meta_description - under 155 characters, describes the actual argument.
+excerpt - the first two sentences of the post, plain text, no tags.
+episodes_linked - the episode numbers referenced in the body as an array of integers. Empty array if none.
+
+Return ONLY valid JSON, no fences, no preamble:
+{"title_options":["..."],"slug":"...","meta_description":"...","excerpt":"...","episodes_linked":[]}`;
 
 type EpisodeRow = {
   episode_number: number;
@@ -55,6 +73,96 @@ export async function POST(req: Request) {
     return Response.json({ ok: false, error: 'Invalid JSON body' }, { status: 400 });
   }
 
+  const step = body.step || 'body';
+  const supabaseEarly = createAdminClient();
+
+  // ---------------------------------------------------------------
+  // STEP 2: metadata from a body that is already saved
+  // ---------------------------------------------------------------
+  if (step === 'meta') {
+    if (!body.articleId) {
+      return Response.json(
+        { ok: false, error: 'articleId is required for the meta step' },
+        { status: 400 }
+      );
+    }
+
+    const { data: draft } = await supabaseEarly
+      .from('articles')
+      .select('id, body_html')
+      .eq('id', body.articleId)
+      .single();
+
+    if (!draft || !draft.body_html) {
+      return Response.json({ ok: false, error: 'Draft not found' }, { status: 404 });
+    }
+
+    let meta: Record<string, unknown>;
+    try {
+      const anthropic = getAnthropic();
+      const msg = await anthropic.messages.create({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 700,
+        system: META_SYSTEM,
+        messages: [{ role: 'user', content: draft.body_html }],
+      });
+
+      const text = msg.content
+        .filter((b) => b.type === 'text')
+        .map((b) => (b.type === 'text' ? b.text : ''))
+        .join('');
+
+      meta = JSON.parse(stripFences(text)) as Record<string, unknown>;
+    } catch (err) {
+      return Response.json(
+        { ok: false, error: err instanceof Error ? err.message : 'Metadata failed' },
+        { status: 502 }
+      );
+    }
+
+    const titles = Array.isArray(meta.title_options)
+      ? (meta.title_options as string[])
+      : [];
+    const title = titles.length > 0 ? titles[0] : 'Untitled';
+
+    let slug =
+      typeof meta.slug === 'string' && meta.slug.trim().length > 0
+        ? meta.slug.trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-')
+        : title.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    slug = slug.replace(/^-+/, '').replace(/-+$/, '').slice(0, 80);
+
+    const { data: clash } = await supabaseEarly
+      .from('articles')
+      .select('id')
+      .eq('slug', slug)
+      .neq('id', body.articleId)
+      .limit(1);
+
+    if (clash && clash.length > 0) {
+      slug = slug.slice(0, 70) + '-' + Date.now().toString().slice(-5);
+    }
+
+    await supabaseEarly
+      .from('articles')
+      .update({
+        title: title,
+        slug: slug,
+        title_options: titles,
+        meta_description:
+          typeof meta.meta_description === 'string' ? meta.meta_description : null,
+        excerpt: typeof meta.excerpt === 'string' ? meta.excerpt : null,
+        episodes_linked: Array.isArray(meta.episodes_linked)
+          ? meta.episodes_linked
+          : [],
+      })
+      .eq('id', body.articleId);
+
+    return Response.json({ ok: true, id: body.articleId, title: title, slug: slug });
+  }
+
+  // ---------------------------------------------------------------
+  // STEP 1: write the post body
+  // ---------------------------------------------------------------
   if (!body.input || body.input.trim().length < 5) {
     return Response.json(
       { ok: false, error: 'Say a bit more about what the post should cover.' },
@@ -63,7 +171,7 @@ export async function POST(req: Request) {
   }
 
   const mode = body.mode || 'topic';
-  const supabase = createAdminClient();
+  const supabase = supabaseEarly;
 
   // --- Candidate episodes -------------------------------------------
   // Match on the topic tags first. The archive tagging exists for exactly
@@ -79,7 +187,7 @@ export async function POST(req: Request) {
       .select('episode_number, title, guest_name, key_theme, topics, slug')
       .overlaps('topics', kws)
       .gte('evergreen_score', 3)
-      .limit(14);
+      .limit(10);
     candidates = (data as EpisodeRow[]) || [];
   }
 
@@ -100,7 +208,7 @@ export async function POST(req: Request) {
   }
 
   const episodeBlock = candidates
-    .slice(0, 16)
+    .slice(0, 10)
     .map((e) => {
       const url =
         'https://misfitentrepreneur.com/episodes/' +
@@ -121,7 +229,7 @@ export async function POST(req: Request) {
     .select('title, body_html, word_count')
     .eq('is_style_reference', true)
     .order('word_count', { ascending: true })
-    .limit(4);
+    .limit(2);
 
   const voiceBlock = ((refs as { title: string; body_html: string }[]) || [])
     .map((r) => {
@@ -129,7 +237,7 @@ export async function POST(req: Request) {
         .replace(/<[^>]+>/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
-      return '--- ' + r.title + ' ---\n' + plain.slice(0, 3500);
+      return '--- ' + r.title + ' ---\n' + plain.slice(0, 2600);
     })
     .join('\n\n');
 
@@ -165,14 +273,17 @@ export async function POST(req: Request) {
     voice: voiceBlock || 'None available.',
   });
 
-  let parsed: Record<string, unknown>;
+  let parsed: Record<string, unknown> = {};
 
   try {
     const anthropic = getAnthropic();
     const msg = await anthropic.messages.create({
       model: prompt.model || 'claude-sonnet-4-6',
-      max_tokens: prompt.max_tokens || 4000,
-      system: prompt.system_prompt,
+      max_tokens: 2000,
+      system:
+        prompt.system_prompt +
+        '\n\nFor this request return ONLY the post body as raw HTML paragraphs. ' +
+        'No JSON, no title, no metadata, no markdown fences. Start with the first <p> tag.',
       messages: [{ role: 'user', content: userMessage }],
     });
 
@@ -181,31 +292,19 @@ export async function POST(req: Request) {
       .map((b) => (b.type === 'text' ? b.text : ''))
       .join('');
 
-    // The body is returned after a marker rather than inside the JSON.
-    // Long HTML inside a JSON string breaks on a single unescaped quote,
-    // which is exactly what an <a href="..."> tag is full of.
-    const clean = stripFences(text);
-    const marker = clean.indexOf('===BODY===');
+    // Only the body comes back now, so nothing needs JSON escaping.
+    let out = stripFences(text).trim();
 
-    if (marker === -1) {
-      // Older prompt shape, or the model ignored the marker
-      parsed = JSON.parse(clean) as Record<string, unknown>;
-    } else {
-      const head = clean.slice(0, marker).trim();
-      const bodyPart = clean.slice(marker + '===BODY==='.length).trim();
-
-      const braceStart = head.indexOf('{');
-      const braceEnd = head.lastIndexOf('}');
-      if (braceStart === -1 || braceEnd === -1) {
-        throw new Error('No JSON block found before the body marker');
-      }
-
-      parsed = JSON.parse(head.slice(braceStart, braceEnd + 1)) as Record<
-        string,
-        unknown
-      >;
-      parsed.body_html = bodyPart;
+    // Strip a leading JSON block or marker if the model adds one anyway
+    const marker = out.indexOf('===BODY===');
+    if (marker !== -1) {
+      out = out.slice(marker + '===BODY==='.length).trim();
+    } else if (out.startsWith('{')) {
+      const firstTag = out.indexOf('<p');
+      if (firstTag !== -1) out = out.slice(firstTag);
     }
+
+    parsed.body_html = out;
   } catch (err) {
     return Response.json(
       {
@@ -219,31 +318,8 @@ export async function POST(req: Request) {
   }
 
   // --- Save as a draft article ------------------------------------------
-  const titles = Array.isArray(parsed.title_options)
-    ? (parsed.title_options as string[])
-    : [];
-  const title = titles.length > 0 ? titles[0] : 'Untitled';
-
-  let slug =
-    typeof parsed.slug === 'string' && parsed.slug.trim().length > 0
-      ? parsed.slug.trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-')
-      : title.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-  slug = slug.replace(/^-+/, '').replace(/-+$/, '').slice(0, 80);
-
-  // A slug collision would overwrite a real post, so make it unique
-  const { data: clash } = await supabase
-    .from('articles')
-    .select('id')
-    .eq('slug', slug)
-    .limit(1);
-
-  if (clash && clash.length > 0) {
-    slug = slug.slice(0, 70) + '-' + Date.now().toString().slice(-5);
-  }
-
   let bodyHtml = typeof parsed.body_html === 'string' ? parsed.body_html.trim() : '';
 
-  // If it came back as plain paragraphs, wrap them so the page renders
   if (bodyHtml.length > 0 && bodyHtml.indexOf('<p') === -1) {
     bodyHtml = bodyHtml
       .split(/\n\s*\n/)
@@ -252,24 +328,29 @@ export async function POST(req: Request) {
       .map((p) => '<p>' + p + '</p>')
       .join('\n');
   }
+
+  if (bodyHtml.length < 200) {
+    return Response.json(
+      { ok: false, error: 'The model returned almost nothing. Try again.' },
+      { status: 502 }
+    );
+  }
+
   const plain = bodyHtml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  const words = plain.split(/\s+/).filter(Boolean).length;
+
+  // Placeholder slug and title. Step 2 replaces both.
+  const tempSlug = 'draft-' + Date.now().toString(36);
 
   const { data: inserted, error: insErr } = await supabase
     .from('articles')
     .insert({
-      slug: slug,
-      title: title,
+      slug: tempSlug,
+      title: 'Untitled draft',
       body_html: bodyHtml,
-      excerpt: typeof parsed.excerpt === 'string' ? parsed.excerpt : null,
-      meta_description:
-        typeof parsed.meta_description === 'string' ? parsed.meta_description : null,
-      word_count: plain.split(/\s+/).filter(Boolean).length,
+      word_count: words,
       status: 'draft',
       source: 'standalone',
-      title_options: titles,
-      episodes_linked: Array.isArray(parsed.episodes_linked)
-        ? parsed.episodes_linked
-        : [],
     })
     .select('id')
     .single();
@@ -281,9 +362,7 @@ export async function POST(req: Request) {
   return Response.json({
     ok: true,
     id: inserted?.id,
-    slug: slug,
-    title: title,
-    words: plain.split(/\s+/).filter(Boolean).length,
+    words: words,
     candidates: candidates.length,
   });
 }
