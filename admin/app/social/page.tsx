@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase-browser';
 import Nav from '../components/Nav';
+import QuoteCard from '../components/QuoteCard';
 
 type Post = {
   id: string;
@@ -19,6 +20,7 @@ type EpisodeLite = {
   id: string;
   episode_number: number;
   title: string | null;
+  guest_name: string | null;
 };
 
 const PLATFORMS = [
@@ -51,6 +53,7 @@ export default function SocialPage() {
   const [platform, setPlatform] = useState('x');
   const [count, setCount] = useState('5');
   const [generating, setGenerating] = useState(false);
+  const [cardFor, setCardFor] = useState<string | null>(null);
 
   async function load() {
     const supabase = createClient();
@@ -77,7 +80,7 @@ export default function SocialPage() {
     if (ids.length > 0) {
       const { data: eps } = await supabase
         .from('episodes')
-        .select('id, episode_number, title')
+        .select('id, episode_number, title, guest_name')
         .in('id', ids);
 
       const map: Record<string, EpisodeLite> = {};
@@ -331,6 +334,15 @@ export default function SocialPage() {
                 >
                   {p.status === 'approved' ? 'Unapprove' : 'Approve'}
                 </button>
+                {ep && (
+                  <button
+                    className="btn btn-ghost"
+                    style={{ padding: '6px 14px', fontSize: 11.5 }}
+                    onClick={() => setCardFor(cardFor === p.id ? null : p.id)}
+                  >
+                    {cardFor === p.id ? 'Hide card' : 'Make card'}
+                  </button>
+                )}
                 <button
                   className="btn btn-ghost"
                   style={{
@@ -345,6 +357,15 @@ export default function SocialPage() {
                   Delete
                 </button>
               </div>
+
+              {cardFor === p.id && ep && (
+                <QuoteCard
+                  episodeId={ep.id}
+                  episodeNumber={ep.episode_number}
+                  guestName={ep.guest_name || ''}
+                  compact
+                />
+              )}
             </div>
           );
         })}
