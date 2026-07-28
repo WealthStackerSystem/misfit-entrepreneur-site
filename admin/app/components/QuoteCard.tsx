@@ -46,10 +46,12 @@ export default function QuoteCard({
   episodeId,
   episodeNumber,
   guestName,
+  compact,
 }: {
   episodeId: string;
   episodeNumber: number;
   guestName: string;
+  compact?: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [quote, setQuote] = useState('');
@@ -86,6 +88,20 @@ export default function QuoteCard({
         } catch {
           // nothing usable in this asset
         }
+      }
+
+      // Back catalogue episodes have no generated assets, only the quote
+      // scraped from their old show notes page.
+      if (found.length === 0) {
+        const { data: ep } = await supabase
+          .from('episodes')
+          .select('best_quote, key_theme')
+          .eq('id', episodeId)
+          .single();
+
+        const row = ep as { best_quote: string | null; key_theme: string | null } | null;
+        if (row?.best_quote) found.push(row.best_quote);
+        if (row?.key_theme) found.push(row.key_theme);
       }
 
       setOptions(found);
@@ -204,14 +220,22 @@ export default function QuoteCard({
     link.click();
   }
 
+  const shell = compact
+    ? { marginTop: 14, borderTop: '1px solid rgba(255,255,255,.07)', paddingTop: 16 }
+    : { marginBottom: 20 };
+
   return (
-    <div className="card" style={{ marginBottom: 20 }}>
-      <div className="eyebrow">Graphics</div>
-      <h3 style={{ marginBottom: 8 }}>Quote Card</h3>
-      <p className="muted" style={{ fontSize: 14, marginBottom: 16 }}>
-        Instagram needs an image, not a caption. Pick a line, choose a size, download
-        the PNG.
-      </p>
+    <div className={compact ? '' : 'card'} style={shell}>
+      {!compact && (
+        <>
+          <div className="eyebrow">Graphics</div>
+          <h3 style={{ marginBottom: 8 }}>Quote Card</h3>
+          <p className="muted" style={{ fontSize: 14, marginBottom: 16 }}>
+            Instagram needs an image, not a caption. Pick a line, choose a size,
+            download the PNG.
+          </p>
+        </>
+      )}
 
       {options.length > 0 && (
         <div className="field">
