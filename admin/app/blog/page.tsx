@@ -63,6 +63,7 @@ export default function BlogPage() {
   const [draftMeta, setDraftMeta] = useState('');
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [showRefs, setShowRefs] = useState(false);
 
   async function load() {
@@ -224,6 +225,34 @@ export default function BlogPage() {
     setSaving(false);
   }
 
+  async function deleteArticle(a: Article) {
+    const warning =
+      a.status === 'published'
+        ? 'Delete "' + a.title + '"?\n\nThis removes it from the admin only. ' +
+          'The live page at /blog/' + a.slug + '.html stays up until you ' +
+          'delete that file from the repo.'
+        : 'Delete "' + a.title + '"? This cannot be undone.';
+
+    if (!confirm(warning)) return;
+
+    setDeleting(true);
+    setError(null);
+    setMessage(null);
+
+    const supabase = createClient();
+    const { error: err } = await supabase.from('articles').delete().eq('id', a.id);
+
+    if (err) {
+      setError(err.message);
+    } else {
+      setMessage('Deleted.');
+      if (openId === a.id) setOpenId(null);
+      load();
+    }
+
+    setDeleting(false);
+  }
+
   async function toggleReference(a: Article) {
     const supabase = createClient();
     const { error: err } = await supabase
@@ -270,7 +299,7 @@ export default function BlogPage() {
   const posts = articles.filter((a) => a.status !== 'reference');
   const drafts = posts.filter((a) => a.status === 'draft');
   const live = posts.filter((a) => a.status !== 'draft');
-  const busy = generating || saving || publishing;
+  const busy = generating || saving || publishing || deleting;
 
   const activeMode = MODES.find((m) => m.key === mode) || MODES[0];
 
@@ -375,9 +404,11 @@ export default function BlogPage() {
                 onSave={() => saveArticle(a)}
                 onPublish={() => publish(a)}
                 onToggleRef={() => toggleReference(a)}
+                onDelete={() => deleteArticle(a)}
                 busy={busy}
                 saving={saving}
                 publishing={publishing}
+                deleting={deleting}
               />
             ))}
           </>
@@ -401,9 +432,11 @@ export default function BlogPage() {
                 onSave={() => saveArticle(a)}
                 onPublish={() => publish(a)}
                 onToggleRef={() => toggleReference(a)}
+                onDelete={() => deleteArticle(a)}
                 busy={busy}
                 saving={saving}
                 publishing={publishing}
+                deleting={deleting}
               />
             ))}
           </>
@@ -458,9 +491,11 @@ function ArticleCard(props: {
   onSave: () => void;
   onPublish: () => void;
   onToggleRef: () => void;
+  onDelete: () => void;
   busy: boolean;
   saving: boolean;
   publishing: boolean;
+  deleting: boolean;
 }) {
   const a = props.a;
 
@@ -579,6 +614,19 @@ function ArticleCard(props: {
                 View live
               </a>
             )}
+
+            <button
+              className="btn btn-ghost"
+              onClick={props.onDelete}
+              disabled={props.busy}
+              style={{
+                marginLeft: 'auto',
+                borderColor: 'rgba(220,80,80,.35)',
+                color: '#d97070',
+              }}
+            >
+              {props.deleting ? 'Deleting...' : 'Delete'}
+            </button>
           </div>
         </div>
       )}
