@@ -88,9 +88,12 @@ export function buildMinuteHtml(
 <style>
 body{margin:0;padding:20px;background:#e8e8e8;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;}
 .wrap{max-width:620px;margin:0 auto;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.08);}
-.head{background:#0F0F0F;padding:26px 32px;border-bottom:3px solid #F0B429;}
+.head{background:#0F0F0F;padding:22px 32px;border-bottom:3px solid #F0B429;}
+.head table{width:100%;border-collapse:collapse;}
+.head td{vertical-align:middle;}
 .head .brand{color:#F0B429;font-size:19px;font-weight:700;letter-spacing:4px;text-transform:uppercase;}
 .head .vol{color:#666;font-size:11px;letter-spacing:2px;text-transform:uppercase;margin-top:6px;}
+.head .logo{height:44px;width:auto;display:block;margin-left:auto;}
 .body{padding:34px 38px;color:#1a1a1a;line-height:1.65;font-size:15px;}
 .body p{margin:0 0 16px 0;}
 .eyebrow{font-size:10px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:#8a6a00;margin:0 0 10px 0;}
@@ -104,6 +107,11 @@ hr{border:none;border-top:2px solid #F0B429;margin:30px 0;}
 .quote{background:#0F0F0F;border-radius:8px;padding:28px 30px;text-align:center;}
 .quote p{color:#fff;font-family:Georgia,serif;font-style:italic;font-size:18px;line-height:1.5;margin:0 0 12px 0;}
 .quote .attr{color:#F0B429;font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;}
+.promo{background:#0F0F0F;border-radius:8px;padding:24px 28px;margin:0 0 8px 0;}
+.promo .tag{color:#F0B429;font-size:10px;font-weight:700;letter-spacing:3px;text-transform:uppercase;margin-bottom:8px;}
+.promo h4{color:#fff;font-size:17px;font-weight:700;margin:0 0 8px 0;}
+.promo p{color:#a9a29a;font-size:13.5px;line-height:1.6;margin:0 0 14px 0;}
+.promo .btn{padding:10px 22px;font-size:13px;}
 .sponsor{border:1px solid #e8e2d4;border-radius:6px;padding:20px 22px;margin-bottom:12px;background:#fdfcf9;}
 .sp-logo{display:block;height:38px;width:auto;max-width:170px;object-fit:contain;margin-bottom:12px;}
 .sp-name{font-weight:700;font-size:15px;color:#0F0F0F;margin-bottom:6px;}
@@ -121,8 +129,15 @@ a{color:#0F0F0F;}
 <div class="wrap">
 
 <div class="head">
-  <div class="brand">The Misfit Minute</div>
-  <div class="vol">Volume ${esc(volume)} &middot; Issue ${esc(issue)}</div>
+  <table role="presentation"><tr>
+    <td>
+      <div class="brand">The Misfit Minute</div>
+      <div class="vol">Volume ${esc(volume)} &middot; Issue ${esc(issue)}</div>
+    </td>
+    <td width="90">
+      <img src="${SITE}/images/logo.jpg" alt="Misfit Entrepreneur" class="logo">
+    </td>
+  </tr></table>
 </div>
 
 <div class="body">
@@ -157,6 +172,15 @@ ${article ? `<hr class="rule">
 <h3>${esc(article.title)}</h3>
 <p>${parts.blog_blurb || ''}</p>
 <p><a href="${esc(articleUrl)}">Read it &rarr;</a></p>` : ''}
+
+<hr class="rule">
+
+<div class="promo">
+  <div class="tag">Go From Knowing to Doing</div>
+  <h4>The Misfit Execution Playbook</h4>
+  <p>The step by step system for closing the gap between what you intend to do and what you actually do. Built on the Misfit OS&trade; framework. $29.</p>
+  <a href="${SITE}/playbook" class="btn">Get the Playbook</a>
+</div>
 
 ${sponsors.length > 0 ? `<hr>
 
