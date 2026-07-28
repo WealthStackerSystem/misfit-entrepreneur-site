@@ -226,7 +226,7 @@ export async function POST(req: Request) {
         typeof parsed.meta_description === 'string' ? parsed.meta_description : null,
       word_count: plain.split(/\s+/).filter(Boolean).length,
       status: 'draft',
-      source: 'generated',
+      source: 'standalone',
       title_options: titles,
       episodes_linked: Array.isArray(parsed.episodes_linked)
         ? parsed.episodes_linked
