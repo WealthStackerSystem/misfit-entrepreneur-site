@@ -15,6 +15,7 @@ import {
 import { stripFences } from '@/lib/anthropic';
 import Nav from '../../components/Nav';
 import AssetViewer from '../../components/AssetViewer';
+import SocialPosts from '../../components/SocialPosts';
 import { buildMinuteHtml, type MinuteParts } from '@/lib/misfit-minute-template';
 
 type Episode = {
@@ -1366,6 +1367,8 @@ export default function EpisodeDetailPage() {
                 />
               </div>
             )}
+
+            <SocialPosts episodeId={id} />
 
             <AssetViewer episodeId={id} />
           </>
