@@ -7,6 +7,7 @@ const OWNER = 'WealthStackerSystem';
 const REPO = 'misfit-entrepreneur-site';
 const BRANCH = 'main';
 const INDEX_PATH = 'blog_index.json';
+const LISTING_PATH = 'blog.html';
 
 type Body = { articleId: string };
 
@@ -125,6 +126,7 @@ export async function POST(req: Request) {
   let commitSha = '';
   let action = 'created';
   let indexAction = 'unchanged';
+  let listingAction = 'unchanged';
 
   try {
     const existing = await readFile(token, path);
@@ -180,6 +182,62 @@ export async function POST(req: Request) {
           idxFile.sha
         );
       }
+
+      // blog.html is fully static, with every card hardcoded. Updating the
+      // index alone does nothing, so the listing has to be rebuilt from it.
+      const listing = await readFile(token, LISTING_PATH);
+
+      if (listing) {
+        const openTag = '<div class="grid">';
+        const start = listing.text.indexOf(openTag);
+        const end = listing.text.indexOf('</div>\n<footer', start);
+
+        if (start !== -1 && end !== -1) {
+          const sorted = index.slice().sort((a, b) => {
+            const ta = Date.parse(a.pub || '');
+            const tb = Date.parse(b.pub || '');
+            if (isNaN(ta) && isNaN(tb)) return 0;
+            if (isNaN(ta)) return 1;
+            if (isNaN(tb)) return -1;
+            return tb - ta;
+          });
+
+          const cards = sorted
+            .map(
+              (e) =>
+                '<a href="/blog/' + e.slug + '.html" class="card">' +
+                '<div class="card-date">' + e.date + '</div>' +
+                '<h2>' + e.title.replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</h2>' +
+                '<div class="more">Read More &rarr;</div></a>'
+            )
+            .join('\n');
+
+          let rebuilt =
+            listing.text.slice(0, start + openTag.length) +
+            cards +
+            '\n' +
+            listing.text.slice(end);
+
+          // The hero line carries a post count that would otherwise go stale
+          rebuilt = rebuilt.replace(
+            /<p class="sub">\d+ posts/,
+            '<p class="sub">' + sorted.length + ' posts'
+          );
+
+          if (rebuilt !== listing.text) {
+            await writeFile(
+              token,
+              LISTING_PATH,
+              rebuilt,
+              'Rebuild blog listing',
+              listing.sha
+            );
+            listingAction = 'rebuilt';
+          }
+        } else {
+          listingAction = 'skipped, grid markers not found';
+        }
+      }
     }
   } catch (err) {
     return Response.json(
@@ -202,6 +260,7 @@ export async function POST(req: Request) {
     url: 'https://misfitentrepreneur.com/' + path,
     action: action,
     index: indexAction,
+    listing: listingAction,
     commit: commitSha,
   });
 }
