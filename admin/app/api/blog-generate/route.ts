@@ -181,10 +181,39 @@ export async function POST(req: Request) {
       .map((b) => (b.type === 'text' ? b.text : ''))
       .join('');
 
-    parsed = JSON.parse(stripFences(text)) as Record<string, unknown>;
+    // The body is returned after a marker rather than inside the JSON.
+    // Long HTML inside a JSON string breaks on a single unescaped quote,
+    // which is exactly what an <a href="..."> tag is full of.
+    const clean = stripFences(text);
+    const marker = clean.indexOf('===BODY===');
+
+    if (marker === -1) {
+      // Older prompt shape, or the model ignored the marker
+      parsed = JSON.parse(clean) as Record<string, unknown>;
+    } else {
+      const head = clean.slice(0, marker).trim();
+      const bodyPart = clean.slice(marker + '===BODY==='.length).trim();
+
+      const braceStart = head.indexOf('{');
+      const braceEnd = head.lastIndexOf('}');
+      if (braceStart === -1 || braceEnd === -1) {
+        throw new Error('No JSON block found before the body marker');
+      }
+
+      parsed = JSON.parse(head.slice(braceStart, braceEnd + 1)) as Record<
+        string,
+        unknown
+      >;
+      parsed.body_html = bodyPart;
+    }
   } catch (err) {
     return Response.json(
-      { ok: false, error: err instanceof Error ? err.message : 'Generation failed' },
+      {
+        ok: false,
+        error:
+          'Could not read the model output. ' +
+          (err instanceof Error ? err.message : ''),
+      },
       { status: 502 }
     );
   }
@@ -212,7 +241,17 @@ export async function POST(req: Request) {
     slug = slug.slice(0, 70) + '-' + Date.now().toString().slice(-5);
   }
 
-  const bodyHtml = typeof parsed.body_html === 'string' ? parsed.body_html : '';
+  let bodyHtml = typeof parsed.body_html === 'string' ? parsed.body_html.trim() : '';
+
+  // If it came back as plain paragraphs, wrap them so the page renders
+  if (bodyHtml.length > 0 && bodyHtml.indexOf('<p') === -1) {
+    bodyHtml = bodyHtml
+      .split(/\n\s*\n/)
+      .map((p) => p.trim())
+      .filter((p) => p.length > 0)
+      .map((p) => '<p>' + p + '</p>')
+      .join('\n');
+  }
   const plain = bodyHtml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 
   const { data: inserted, error: insErr } = await supabase
